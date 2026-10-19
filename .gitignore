@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Secretos. .env tiene la cadena de conexion con la contrasena.
+.env
+
+# Configuracion local de opencode; incluye un token de GitHub.
+opencode.json
+
+# Imagenes originales y convertidas de las facturas.
+imagenes/
+
+# Salidas generadas, por si alguna vez se escriben en disco.
+exports/

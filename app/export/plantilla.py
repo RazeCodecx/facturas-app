@@ -1,0 +1,184 @@
+"""Lectura de `plantilla.csv`: los pares del contador y su formato numérico.
+
+El archivo es del contador y **no se toca**, salvo una excepción de instalación: si
+está completamente vacío, se le escribe una vez el mensaje de formato. Para que
+"una vez" sobreviva a un reinicio, se deja un archivo centinela al lado.
+
+Ver `specs/004-plantilla-y-csv/design.md`.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+from app.config import RAIZ
+from app.models.invoice import Columna, Formato
+from app.ocr.extract import normalizar_frase
+
+RUTA_PLANTILLA = RAIZ / "plantilla.csv"
+MARCADOR_FORMATO = RAIZ / ".plantilla_escrita"
+
+MENSAJE_FORMATO = (
+    "# Formato de numeros / Number format\n"
+    "# miles   separador de miles / thousands separator   por defecto / default ,\n"
+    "# decimal separador decimal / decimal separator     por defecto / default .\n"
+    "# acentos 1 ignora tildes al buscar / ignore accents 0 no las ignora / keep them\n"
+)
+
+COLUMNAS_POR_DEFECTO: list[Columna] = [
+    Columna("RIF", "RIF del proveedor", 1),
+    Columna("Numero de factura", "Numero", 2),
+    Columna("Fecha", "Fecha de emision", 3),
+    Columna("Fecha vencimiento", "Fecha de vencimiento", 4),
+    Columna("Base", "Base imponible", 5),
+    Columna("Monto exento", "Monto exento", 6),
+    Columna("IVA", "Monto del IVA", 7),
+    Columna("Monto IFA", "Monto IFA", 8),
+    Columna("Retenciones", "Retenciones de IVA", 9),
+    Columna("Total", "Total a pagar", 10),
+    Columna("Moneda", "Moneda", 11),
+]
+
+_OPCION = re.compile(r"\b(miles|decimal|acentos)\s*=\s*(\S+)")
+
+
+class PlantillaError(ValueError):
+    """El archivo del contador no se puede interpretar. El mensaje es para él."""
+
+
+@dataclass(frozen=True)
+class Plantilla:
+    """Los pares del archivo y el formato con el que se leen los números."""
+
+    columnas: list[Columna]
+    formato: Formato
+
+
+def _leer_texto(ruta: Path) -> str:
+    try:
+        datos = ruta.read_bytes()
+    except FileNotFoundError as exc:
+        raise PlantillaError(
+            "No se encuentra plantilla.csv. Escriba una línea por columna con el "
+            '"primer texto = segundo texto".'
+        ) from exc
+
+    if datos.startswith(b"\xef\xbb\xbf"):
+        datos = datos[3:]
+    try:
+        return datos.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PlantillaError(
+            "No se pudo leer plantilla.csv: guarde el archivo con codificación UTF-8."
+        ) from exc
+
+
+def _escribir_mensaje(ruta: Path, marcador: Path) -> None:
+    """Escribe el mensaje de formato una sola vez en la vida de la instalación."""
+    if marcador.exists():
+        return
+    ruta.write_text(MENSAJE_FORMATO, encoding="utf-8-sig", newline="\n")
+    marcador.write_text("", encoding="utf-8")
+
+
+def _aplicar_formato(linea: str, valores: dict[str, object]) -> None:
+    """Lee las opciones de una línea `#`. Lo mal escrito se ignora."""
+    for clave, valor in _OPCION.findall(linea):
+        if clave in ("miles", "decimal"):
+            if len(valor) == 1:
+                valores[clave] = valor
+        elif valor in ("0", "1"):
+            valores["acentos"] = valor == "1"
+
+
+def _parsear(lineas: list[str]) -> tuple[list[Columna], Formato]:
+    valores: dict[str, object] = {"miles": ",", "decimal": ".", "acentos": True}
+    columnas: list[Columna] = []
+
+    for numero, cruda in enumerate(lineas, start=1):
+        linea = cruda.strip()
+        if not linea:
+            continue
+        if linea.startswith("#"):
+            _aplicar_formato(linea, valores)
+            continue
+
+        if "=" not in linea:
+            raise PlantillaError(
+                f'plantilla.csv línea {numero}: falta el "=". '
+                'Escriba "primer texto = segundo texto".'
+            )
+        if linea.count("=") > 1:
+            raise PlantillaError(
+                f'plantilla.csv línea {numero}: hay más de un "=". Solo uno por línea.'
+            )
+
+        frase, encabezado = linea.split("=", 1)
+        frase = frase.strip()
+        encabezado = encabezado.strip()
+        if not frase:
+            raise PlantillaError(
+                f'plantilla.csv línea {numero}: no dice qué buscar antes del "=".'
+            )
+        columnas.append(Columna(frase, encabezado or frase, numero))
+
+    formato = Formato(
+        miles=str(valores["miles"]),
+        decimal=str(valores["decimal"]),
+        acentos=bool(valores["acentos"]),
+    )
+
+    vistos: dict[str, Columna] = {}
+    for columna in columnas:
+        clave = normalizar_frase(columna.frase, formato.acentos)
+        anterior = vistos.get(clave)
+        if anterior is not None:
+            raise PlantillaError(
+                f'plantilla.csv: "{columna.frase}" está en las líneas '
+                f"{anterior.linea} y {columna.linea}. Un primer texto no se repite."
+            )
+        vistos[clave] = columna
+
+    return columnas, formato
+
+
+def leer_plantilla(
+    ruta: Path | None = None,
+    marcador: Path | None = None,
+) -> Plantilla:
+    """Lee el archivo completo. Vacío significa "defaults", no error."""
+    ruta = RUTA_PLANTILLA if ruta is None else ruta
+    marcador = (ruta.with_name(".plantilla_escrita") if marcador is None else marcador)
+
+    texto = _leer_texto(ruta)
+    if not texto.strip():
+        _escribir_mensaje(ruta, marcador)
+        return Plantilla(list(COLUMNAS_POR_DEFECTO), Formato())
+
+    columnas, formato = _parsear(texto.splitlines())
+    if not columnas:
+        columnas = list(COLUMNAS_POR_DEFECTO)
+    return Plantilla(columnas, formato)
+
+
+def leer_columnas(ruta: Path | None = None) -> list[Columna]:
+    """Devuelve las columnas del contador, o las de fábrica si no escribió ninguna."""
+    return leer_plantilla(ruta).columnas
+
+
+def leer_formato(ruta: Path | None = None) -> Formato:
+    """Devuelve el formato numérico del archivo."""
+    return leer_plantilla(ruta).formato
+
+
+__all__ = [
+    "COLUMNAS_POR_DEFECTO",
+    "MENSAJE_FORMATO",
+    "Plantilla",
+    "PlantillaError",
+    "leer_columnas",
+    "leer_formato",
+    "leer_plantilla",
+]

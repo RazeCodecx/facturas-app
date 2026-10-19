@@ -1,0 +1,1 @@
+"""Dataclasses del dominio. Pydantic solo en request/response."""
