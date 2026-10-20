@@ -2,7 +2,8 @@
 
 App local que recibe fotos de facturas desde un iPhone, las procesa con Tesseract
 y EasyOCR, guarda los datos estructurados en PostgreSQL y exporta un CSV que el
-contador abre y edita en Excel.
+contador abre y edita en Excel. Además, el valor extraído de la imagen se envía en
+tiempo real al Excel cuya ruta exacta se indica en `plantilla.csv`.
 
 El usuario final son contadores, en su mayoría no técnicos, que procesan lotes de
 facturas al día. Región inicial: Venezuela. **El contador es el actor final:** la
@@ -20,8 +21,6 @@ Wi-Fi puede exportar los datos fiscales. Que la red sea privada y con clave.
   — ejecuta los tests (deben pasar antes de cada commit)
 - `.\.venv\Scripts\python.exe -m ruff check .`
   — revisa el estilo (antes de cada PR)
-- `.\.venv\Scripts\python.exe -m pip install -r requirements.txt`
-  — instala dependencias (después de editar `requirements.txt`)
 
 ## Estructura del proyecto
 
@@ -30,12 +29,11 @@ Wi-Fi puede exportar los datos fiscales. Que la red sea privada y con clave.
 - `app/ocr/` — preprocesado de imagen, Tesseract, EasyOCR, búsqueda de los primeros
   textos del contador y parseo a campos
 - `app/db/` — conexión psycopg, pool, migraciones y queries
-- `app/export/` — lectura de `plantilla.csv`, emparejamiento por primer texto y
-  generación del CSV
+- `app/export/` — lectura de `plantilla.csv`, emparejamiento por primer texto,
+  generación del CSV y escritura en tiempo real del Excel de salida
 - `app/models/` — dataclasses/TypedDict; Pydantic solo en request/response
-- `specs/` — artefactos SDD por feature: `spec.md`, `design.md`, `tasks.md`
+- `specs/` — artefactos SDD por feature: spec.md, design.md, tasks.md
 - `tests/` — suite pytest, con `mocks` de imágenes y texto OCR
-
 **No hay carpeta `docs/`.** No existe material de consulta suelto: todo lo que hay son
 reglas, contratos y specs.
 

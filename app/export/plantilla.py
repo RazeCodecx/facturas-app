@@ -25,6 +25,8 @@ MENSAJE_FORMATO = (
     "# miles   separador de miles / thousands separator   por defecto / default ,\n"
     "# decimal separador decimal / decimal separator     por defecto / default .\n"
     "# acentos 1 ignora tildes al buscar / ignore accents 0 no las ignora / keep them\n"
+    "# excel   ruta absoluta del Excel de salida / output Excel absolute path\n"
+    "#         ejemplo / example: #excel=C:\\Contabilidad\\facturas.xlsx\n"
 )
 
 COLUMNAS_POR_DEFECTO: list[Columna] = [
@@ -42,6 +44,7 @@ COLUMNAS_POR_DEFECTO: list[Columna] = [
 ]
 
 _OPCION = re.compile(r"\b(miles|decimal|acentos)\s*=\s*(\S+)")
+_EXCEL = re.compile(r"^#\s*excel\s*=\s*(.*)$", re.IGNORECASE)
 
 
 class PlantillaError(ValueError):
@@ -50,10 +53,11 @@ class PlantillaError(ValueError):
 
 @dataclass(frozen=True)
 class Plantilla:
-    """Los pares del archivo y el formato con el que se leen los números."""
+    """Los pares del archivo, el formato de los números y el Excel de salida."""
 
     columnas: list[Columna]
     formato: Formato
+    salida: Path | None = None
 
 
 def _leer_texto(ruta: Path) -> str:
@@ -83,6 +87,17 @@ def _escribir_mensaje(ruta: Path, marcador: Path) -> None:
     marcador.write_text("", encoding="utf-8")
 
 
+def _ruta_excel(crudo: str) -> Path | None:
+    """Valida la ruta del Excel de salida. Lo que no sirve se ignora."""
+    texto = crudo.strip().strip('"').strip("'").strip()
+    if not texto:
+        return None
+    ruta = Path(texto)
+    if not ruta.is_absolute() or ruta.suffix.lower() != ".xlsx":
+        return None
+    return ruta
+
+
 def _aplicar_formato(linea: str, valores: dict[str, object]) -> None:
     """Lee las opciones de una línea `#`. Lo mal escrito se ignora."""
     for clave, valor in _OPCION.findall(linea):
@@ -93,15 +108,22 @@ def _aplicar_formato(linea: str, valores: dict[str, object]) -> None:
             valores["acentos"] = valor == "1"
 
 
-def _parsear(lineas: list[str]) -> tuple[list[Columna], Formato]:
+def _parsear(lineas: list[str]) -> tuple[list[Columna], Formato, Path | None]:
     valores: dict[str, object] = {"miles": ",", "decimal": ".", "acentos": True}
     columnas: list[Columna] = []
+    salida: Path | None = None
 
     for numero, cruda in enumerate(lineas, start=1):
         linea = cruda.strip()
         if not linea:
             continue
         if linea.startswith("#"):
+            coincidencia_excel = _EXCEL.match(linea)
+            if coincidencia_excel is not None:
+                ruta = _ruta_excel(coincidencia_excel.group(1))
+                if ruta is not None:
+                    salida = ruta
+                continue
             _aplicar_formato(linea, valores)
             continue
 
@@ -141,7 +163,7 @@ def _parsear(lineas: list[str]) -> tuple[list[Columna], Formato]:
             )
         vistos[clave] = columna
 
-    return columnas, formato
+    return columnas, formato, salida
 
 
 def leer_plantilla(
@@ -157,10 +179,10 @@ def leer_plantilla(
         _escribir_mensaje(ruta, marcador)
         return Plantilla(list(COLUMNAS_POR_DEFECTO), Formato())
 
-    columnas, formato = _parsear(texto.splitlines())
+    columnas, formato, salida = _parsear(texto.splitlines())
     if not columnas:
         columnas = list(COLUMNAS_POR_DEFECTO)
-    return Plantilla(columnas, formato)
+    return Plantilla(columnas, formato, salida)
 
 
 def leer_columnas(ruta: Path | None = None) -> list[Columna]:

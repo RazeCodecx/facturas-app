@@ -11,7 +11,8 @@ from __future__ import annotations
 import csv
 import io
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from pathlib import Path
 from typing import Any
 
 CABECERA = ("invoice_id", "frase", "columna", "motivo")
@@ -36,21 +37,46 @@ def _partir_aviso(aviso: str) -> tuple[str, str, str]:
     return "", "", motivo
 
 
-def generar_avisos(facturas: Sequence[dict[str, Any]]) -> bytes:
-    """Un renglón por aviso, en el mismo orden en que se exportan las facturas."""
-    salida = io.StringIO(newline="")
-    escritor = csv.writer(salida, delimiter=",")
-    escritor.writerow(CABECERA)
-
+def _filas(facturas: Iterable[dict[str, Any]]) -> Iterator[list[Any]]:
+    """Genera un renglón por aviso, en el orden de las facturas recibidas."""
     for factura in facturas:
         motivo_crudo = factura.get("review_reason") or ""
         for aviso in (parte.strip() for parte in motivo_crudo.split(";")):
             if not aviso:
                 continue
             frase, columna, motivo = _partir_aviso(aviso)
-            escritor.writerow([factura.get("id", ""), frase, columna, motivo])
+            yield [factura.get("id", ""), frase, columna, motivo]
 
+
+def generar_avisos(facturas: Sequence[dict[str, Any]]) -> bytes:
+    """Un renglón por aviso, en el mismo orden en que se exportan las facturas."""
+    salida = io.StringIO(newline="")
+    escritor = csv.writer(salida, delimiter=",")
+    escritor.writerow(CABECERA)
+    escritor.writerows(_filas(facturas))
     return salida.getvalue().encode("utf-8-sig")
 
 
-__all__ = ["CABECERA", "generar_avisos"]
+def escribir_avisos(ruta: Path, facturas: Sequence[dict[str, Any]]) -> None:
+    """Reescribe el archivo completo, con su cabecera."""
+    ruta.write_bytes(generar_avisos(facturas))
+
+
+def agregar_avisos(ruta: Path, facturas: Sequence[dict[str, Any]]) -> None:
+    """Agrega los avisos al final; la cabecera solo va si el archivo es nuevo."""
+    nuevo = not ruta.exists() or ruta.stat().st_size == 0
+    with ruta.open(
+        "a", newline="", encoding="utf-8-sig" if nuevo else "utf-8"
+    ) as archivo:
+        escritor = csv.writer(archivo, delimiter=",")
+        if nuevo:
+            escritor.writerow(CABECERA)
+        escritor.writerows(_filas(facturas))
+
+
+__all__ = [
+    "CABECERA",
+    "agregar_avisos",
+    "escribir_avisos",
+    "generar_avisos",
+]

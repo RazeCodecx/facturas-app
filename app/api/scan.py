@@ -7,6 +7,7 @@ traduce cada fallo a un código HTTP (`specs/003-api-captura/design.md`).
 from __future__ import annotations
 
 import io
+import logging
 import uuid
 from pathlib import Path
 from typing import Any
@@ -18,12 +19,14 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import config
 from app.db import queries
+from app.export.excel import sincronizar
 from app.export.plantilla import Plantilla, PlantillaError, leer_plantilla
 from app.models.api import ScanResponse
 from app.models.invoice import ExtractionResult
 from app.ocr.pipeline import leer_factura
 
 router = APIRouter(tags=["captura"])
+logger = logging.getLogger(__name__)
 
 TIPOS_PERMITIDOS = {
     "image/jpeg": ".jpg",
@@ -176,6 +179,11 @@ async def escanear(file: UploadFile = File(...)) -> ScanResponse | JSONResponse:
         engine_version=resultado.engines_used[0] if resultado.engines_used else "tesseract",
         confidence=_confianza(resultado),
     )
+
+    try:
+        sincronizar(plantilla)
+    except Exception:
+        logger.exception("No se pudo actualizar el Excel de salida.")
 
     return ScanResponse(
         invoice_id=invoice_id,

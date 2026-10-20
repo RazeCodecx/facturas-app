@@ -312,6 +312,42 @@ def test_scan_sigue_sin_easyocr(
     assert respuesta.json()["invoice_id"] == 1
 
 
+def test_scan_sincroniza_el_excel_de_salida(
+    cliente: TestClient,
+    fake: FakeQueries,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    llamadas: list[Plantilla] = []
+    monkeypatch.setattr(api_scan, "sincronizar", llamadas.append)
+    monkeypatch.setattr(
+        api_scan,
+        "leer_plantilla",
+        lambda: Plantilla([_columna()], Formato(), tmp_path / "salida.xlsx"),
+    )
+
+    respuesta = _subir(cliente)
+
+    assert respuesta.status_code == 201
+    assert llamadas and llamadas[0].salida == tmp_path / "salida.xlsx"
+
+
+def test_un_fallo_del_excel_no_rompe_el_escaneo(
+    cliente: TestClient,
+    fake: FakeQueries,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _falla(_: Plantilla) -> None:
+        raise OSError("archivo bloqueado")
+
+    monkeypatch.setattr(api_scan, "sincronizar", _falla)
+
+    respuesta = _subir(cliente)
+
+    assert respuesta.status_code == 201
+    assert len(fake.facturas) == 1
+
+
 def test_listado_filtra_y_pagina(cliente: TestClient, fake: FakeQueries) -> None:
     _subir(cliente)
 

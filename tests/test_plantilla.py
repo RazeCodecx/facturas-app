@@ -197,6 +197,39 @@ def test_el_mensaje_se_escribe_una_sola_vez(tmp_path: Path) -> None:
     assert ruta.read_bytes() == BOM
 
 
+def test_excel_lee_ruta_absoluta_con_espacios(tmp_path: Path) -> None:
+    destino = tmp_path / "Contabilidad 2026" / "facturas.xlsx"
+
+    plantilla = _leer(tmp_path, f"#excel={destino}\nTotal = Base\n")
+
+    assert plantilla.salida == destino
+
+
+def test_sin_linea_excel_no_hay_salida(tmp_path: Path) -> None:
+    assert _leer(tmp_path, "Total = Base\n").salida is None
+
+
+def test_excel_con_ruta_relativa_se_ignora(tmp_path: Path) -> None:
+    assert _leer(tmp_path, "#excel=facturas.xlsx\nTotal = Base\n").salida is None
+
+
+def test_excel_con_otra_extension_se_ignora(tmp_path: Path) -> None:
+    ruta = tmp_path / "facturas.csv"
+
+    assert _leer(tmp_path, f"#excel={ruta}\nTotal = Base\n").salida is None
+
+
+def test_excel_gana_la_ultima_ruta(tmp_path: Path) -> None:
+    primera = tmp_path / "primera.xlsx"
+    segunda = tmp_path / "segunda.xlsx"
+
+    plantilla = _leer(
+        tmp_path, f"#excel={primera}\n#excel={segunda}\nTotal = Base\n"
+    )
+
+    assert plantilla.salida == segunda
+
+
 def test_el_export_no_modifica_la_plantilla(tmp_path: Path) -> None:
     ruta = _escribir(tmp_path, "Total = Base imponible\n")
     antes = ruta.read_bytes()

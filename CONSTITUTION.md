@@ -10,7 +10,9 @@
 - Base de datos: PostgreSQL local vía `psycopg` v3
 - Salida: CSV con la biblioteca estándar (UTF-8 con BOM, se abre en Excel)
 
-Dependencias autorizadas, y ninguna más: `fastapi`, `uvicorn`, `python-multipart`, `pydantic`, `pytesseract`, `easyocr`, `psycopg[binary]`, `Pillow`, `pillow-heif`, `opencv-python-headless`, y las transitivas que arrastren (EasyOCR exige PyTorch y numpy).
+Dependencias autorizadas, y ninguna más: `fastapi`, `uvicorn`, `python-multipart`, `pydantic`, `pytesseract`, `easyocr`, `psycopg[binary]`, `Pillow`, `pillow-heif`, `opencv-python-headless`, `openpyxl`, y las transitivas que arrastren (EasyOCR exige PyTorch y numpy).
+
+`openpyxl` está autorizada porque el contador indica en `plantilla.csv` la ruta exacta de un libro `.xlsx` y la app escribe ahí los valores extraídos en tiempo real, sin pasar por el CSV descargable.
 
 `pillow-heif` está autorizada porque el iPhone manda las fotos en HEIC y Pillow no lo abre sin ella (`SCHEMAS.md` §7).
 

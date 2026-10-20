@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## 005 — Excel de salida en tiempo real (2026-10-20)
+
+### Hecho
+
+- `app/export/plantilla.py`: nueva opción `#excel=<ruta absoluta>` en las líneas
+  `#`; `Plantilla.salida` (aditiva). Ruta relativa, extensión distinta de `.xlsx` o
+  línea mal escrita se ignoran. Sin la línea, no se sincroniza nada.
+- `app/export/excel.py`: escribe el libro indicado en una hoja `Facturas`,
+  conservando las demás hojas. Agrega solo las facturas nuevas usando un cursor por
+  canal en `.excel_estado.json` (raíz del proyecto). Guardado atómico, respaldo
+  `*.bak` al rehacer y reintento en el siguiente escaneo si el libro está bloqueado.
+- `app/export/avisos.py`: `escribir_avisos` y `agregar_avisos` para el `avisos.csv`
+  que vive junto al Excel.
+- `app/api/scan.py`: una llamada a `sincronizar(plantilla)` después de registrar la
+  factura; un fallo del Excel no cambia la respuesta del escaneo.
+- `app/export/csv.py`: `valores_por_frase` pasó a público para reutilizarlo.
+- `CONSTITUTION.md`: `openpyxl` autorizada. `AGENTS.md`: el valor extraído se envía
+  en tiempo real al Excel indicado en `plantilla.csv`.
+- `tests/test_excel.py` (12 pruebas) y ampliaciones en `tests/test_plantilla.py` y
+  `tests/test_api.py`.
+
+### Decisiones tomadas en esta implementación
+
+- **El cursor vive en la raíz del proyecto**, como se pidió, y no en una tabla.
+- **No se crean carpetas**: si la carpeta destino no existe, se registra el motivo y
+  no se escribe.
+- **Sin SQL nuevo**: se reutiliza `listar_para_exportar()` y se filtra por `id` en
+  memoria, para no tocar `queries.py`.
+- **Primer volcado completo**: si falta el estado, desapareció el libro o cambiaron
+  los encabezados, se respalda y se reescribe solo la hoja `Facturas` (y
+  `avisos.csv`), en vez de arriesgar filas desalineadas o duplicadas.
+
 ## 004 — Plantilla y CSV (2026-10-19)
 
 **Estado:** implementada y verificada con datos simulados. **La spec no se cierra**:

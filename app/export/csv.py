@@ -29,7 +29,7 @@ def _celda(valor: Any) -> str:
     return str(valor)
 
 
-def _valores_por_frase(
+def valores_por_frase(
     valores: Sequence[dict[str, Any]], acentos: bool
 ) -> dict[str, Any]:
     """Indexa el JSONB por primer texto, con la normalización de la búsqueda."""
@@ -58,10 +58,10 @@ def generar_csv(
         normalizar_frase(columna.frase, formato.acentos) for columna in columnas
     ]
     for factura in facturas:
-        guardados = _valores_por_frase(factura.get("values") or [], formato.acentos)
+        guardados = valores_por_frase(factura.get("values") or [], formato.acentos)
         escritor.writerow([_celda(guardados.get(clave)) for clave in claves])
 
     return salida.getvalue().encode("utf-8-sig")
 
 
-__all__ = ["generar_csv"]
+__all__ = ["generar_csv", "valores_por_frase"]
