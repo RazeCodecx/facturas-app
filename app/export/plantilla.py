@@ -21,6 +21,7 @@ RUTA_PLANTILLA = RAIZ / "plantilla.csv"
 MARCADOR_FORMATO = RAIZ / ".plantilla_escrita"
 
 MENSAJE_FORMATO = (
+    "# Escriba una linea por columna: primer texto = titulo\n"
     "# Formato de numeros / Number format\n"
     "# miles   separador de miles / thousands separator   por defecto / default ,\n"
     "# decimal separador decimal / decimal separator     por defecto / default .\n"
@@ -28,20 +29,6 @@ MENSAJE_FORMATO = (
     "# excel   ruta absoluta del Excel de salida / output Excel absolute path\n"
     "#         ejemplo / example: #excel=C:\\Contabilidad\\facturas.xlsx\n"
 )
-
-COLUMNAS_POR_DEFECTO: list[Columna] = [
-    Columna("RIF", "RIF del proveedor", 1),
-    Columna("Numero de factura", "Numero", 2),
-    Columna("Fecha", "Fecha de emision", 3),
-    Columna("Fecha vencimiento", "Fecha de vencimiento", 4),
-    Columna("Base", "Base imponible", 5),
-    Columna("Monto exento", "Monto exento", 6),
-    Columna("IVA", "Monto del IVA", 7),
-    Columna("Monto IFA", "Monto IFA", 8),
-    Columna("Retenciones", "Retenciones de IVA", 9),
-    Columna("Total", "Total a pagar", 10),
-    Columna("Moneda", "Moneda", 11),
-]
 
 _OPCION = re.compile(r"\b(miles|decimal|acentos)\s*=\s*(\S+)")
 _EXCEL = re.compile(r"^#\s*excel\s*=\s*(.*)$", re.IGNORECASE)
@@ -170,23 +157,29 @@ def leer_plantilla(
     ruta: Path | None = None,
     marcador: Path | None = None,
 ) -> Plantilla:
-    """Lee el archivo completo. Vacío significa "defaults", no error."""
+    """Lee el archivo completo. Sin columnas es error: no hay valores por defecto."""
     ruta = RUTA_PLANTILLA if ruta is None else ruta
     marcador = (ruta.with_name(".plantilla_escrita") if marcador is None else marcador)
 
     texto = _leer_texto(ruta)
     if not texto.strip():
         _escribir_mensaje(ruta, marcador)
-        return Plantilla(list(COLUMNAS_POR_DEFECTO), Formato())
+        raise PlantillaError(
+            "plantilla.csv no tiene columnas. Escriba al menos una línea "
+            '"primer texto = título".'
+        )
 
     columnas, formato, salida = _parsear(texto.splitlines())
     if not columnas:
-        columnas = list(COLUMNAS_POR_DEFECTO)
+        raise PlantillaError(
+            "plantilla.csv no tiene columnas. Escriba al menos una línea "
+            '"primer texto = título".'
+        )
     return Plantilla(columnas, formato, salida)
 
 
 def leer_columnas(ruta: Path | None = None) -> list[Columna]:
-    """Devuelve las columnas del contador, o las de fábrica si no escribió ninguna."""
+    """Devuelve las columnas que escribió el contador."""
     return leer_plantilla(ruta).columnas
 
 
@@ -196,7 +189,6 @@ def leer_formato(ruta: Path | None = None) -> Formato:
 
 
 __all__ = [
-    "COLUMNAS_POR_DEFECTO",
     "MENSAJE_FORMATO",
     "Plantilla",
     "PlantillaError",

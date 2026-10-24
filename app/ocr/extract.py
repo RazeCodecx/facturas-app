@@ -17,17 +17,12 @@ from dataclasses import dataclass
 
 from app.models.invoice import (
     Columna,
-    ControlFields,
     ExtractedValue,
     ExtractionResult,
     Formato,
 )
-from app.ocr.normalize import fecha, formatear_numero, numero
+from app.ocr.normalize import numero
 from app.ocr.tesseract_engine import Lectura
-
-ALIAS_RIF = ("RIF",)
-ALIAS_NUMERO = ("N° factura", "Nº factura", "No. factura", "Factura N°")
-ALIAS_FECHA = ("Fecha",)
 
 _ESTADO_OK = "ok"
 _ESTADO_SIN_COINCIDENCIA = "no_match"
@@ -39,7 +34,7 @@ class _Hallazgo:
     """Resultado interno de buscar una columna en una lectura."""
 
     estado: str
-    valor: str | None = None
+    valor: float | str | None = None
     linea: int | None = None
 
 
@@ -87,21 +82,28 @@ def _coincidencias(texto: str, frase: str) -> list[tuple[int, int]]:
     return [(coincidencia.start(), coincidencia.end()) for coincidencia in patron.finditer(texto)]
 
 
-def _primer_valor(segmento: str, formato: Formato) -> str | None:
-    """Devuelve el primer número o fecha del segmento, ya normalizado."""
-    for token in re.split(r"\s+", segmento):
-        if not token:
-            continue
-        valor_fecha = fecha(token)
-        if valor_fecha is not None:
-            return valor_fecha
-        valor_numero = numero(token, formato)
-        if valor_numero is not None:
-            return formatear_numero(valor_numero)
+def _primer_valor(segmento: str, formato: Formato) -> float | str | None:
+    """Devuelve el primer número del segmento; si no hay, el primer texto.
+
+    El número se normaliza con el formato del contador. El texto se conserva tal
+    cual, para las columnas que el contador pidió explícitamente y que no son
+    numéricas (por ejemplo, un RIF o una moneda).
+    """
+    tokens = [token for token in re.split(r"\s+", segmento) if token]
+    for token in tokens:
+        valor = numero(token, formato)
+        if valor is not None:
+            return valor
+    for token in tokens:
+        limpio = token.strip(".,;:()[]")
+        if any(caracter.isalnum() for caracter in limpio):
+            return limpio
     return None
 
 
-def _valor_despues(texto: str, fin: int, formato: Formato) -> tuple[str, int] | None:
+def _valor_despues(
+    texto: str, fin: int, formato: Formato
+) -> tuple[float | str, int] | None:
     """Busca el valor en la misma línea de la coincidencia y, si no hay, en la siguiente."""
     linea = texto.count("\n", 0, fin)
     segmentos = texto[fin:].split("\n")
@@ -134,72 +136,6 @@ def _resolver(lectura: Lectura, columna: Columna, formato: Formato) -> _Hallazgo
 
     valor, linea = encontrado
     return _Hallazgo(_ESTADO_OK, valor, linea)
-
-
-def _tokens_despues(lectura: Lectura, frase: str, formato: Formato, limite: int) -> list[str]:
-    """Devuelve los primeros tokens que siguen a una frase, para los campos internos."""
-    texto_normalizado, mapa = _normalizar(lectura.texto, formato.acentos)
-    frase_normalizada = _normalizar_frase(frase, formato.acentos)
-    posiciones = _coincidencias(texto_normalizado, frase_normalizada)
-    if not posiciones:
-        return []
-
-    _, fin = posiciones[0]
-    if fin <= 0 or fin - 1 >= len(mapa):
-        return []
-    fin_original = mapa[fin - 1] + 1
-
-    tokens = [token for token in re.split(r"\s+", lectura.texto[fin_original:]) if token]
-    return tokens[:limite]
-
-
-def _buscar_rif(lecturas: Sequence[Lectura], formato: Formato) -> str | None:
-    """Busca el RIF del proveedor y lo devuelve en forma canónica."""
-    for lectura in lecturas:
-        for alias in ALIAS_RIF:
-            for token in _tokens_despues(lectura, alias, formato, limite=5):
-                limpio = re.sub(r"[^A-Za-z0-9]", "", token).upper()
-                if len(limpio) == 10 and limpio[0] in "VEJPG" and limpio[1:].isdigit():
-                    return f"{limpio[0]}-{limpio[1:9]}-{limpio[9]}"
-    return None
-
-
-def _buscar_numero_factura(lecturas: Sequence[Lectura], formato: Formato) -> str | None:
-    """Busca el número de factura. Puede traer la serie pegada (`001-00001234`)."""
-    for lectura in lecturas:
-        for alias in ALIAS_NUMERO:
-            for token in _tokens_despues(lectura, alias, formato, limite=4):
-                limpio = token.strip(".,;:()[]")
-                if re.search(r"\d", limpio) and fecha(limpio) is None:
-                    return limpio
-    return None
-
-
-def _buscar_fecha(lecturas: Sequence[Lectura], formato: Formato) -> str | None:
-    """Busca la fecha de emisión y la devuelve en ISO."""
-    for lectura in lecturas:
-        for alias in ALIAS_FECHA:
-            for token in _tokens_despues(lectura, alias, formato, limite=4):
-                valor = fecha(token)
-                if valor is not None:
-                    return valor
-    return None
-
-
-def _extraer_control(lecturas: Sequence[Lectura], formato: Formato) -> ControlFields:
-    """Extrae los 4 campos internos, separando la serie del número si viene junto."""
-    numero_factura = _buscar_numero_factura(lecturas, formato)
-    serie = None
-    numero = numero_factura
-    if numero_factura is not None and re.fullmatch(r"\d+-\d+", numero_factura):
-        serie, numero = numero_factura.split("-", 1)
-
-    return ControlFields(
-        supplier_rif=_buscar_rif(lecturas, formato),
-        serie=serie,
-        numero=numero,
-        issue_date=_buscar_fecha(lecturas, formato),
-    )
 
 
 def _unir_motivos(motivos: Sequence[str]) -> str | None:
@@ -241,7 +177,6 @@ def extraer(
 
     for columna in columnas:
         hallazgo = _resolver(lectura, columna, formato)
-        motor = lectura.motor
         confianza = lectura.confianza_linea(hallazgo.linea) if hallazgo.linea is not None else 0.0
 
         necesita_ayuda = hallazgo.estado == _ESTADO_SIN_COINCIDENCIA or (
@@ -259,33 +194,25 @@ def extraer(
                     )
                     if hallazgo.estado != _ESTADO_OK or otra_confianza > confianza:
                         hallazgo = otro
-                        motor = otra_lectura.motor
                         confianza = otra_confianza
 
         if hallazgo.estado == _ESTADO_AMBIGUO:
             motivos.append(_aviso(_ESTADO_AMBIGUO, columna))
-            valores.append(ExtractedValue(columna.encabezado, None, 0.0, motor))
+            valores.append(ExtractedValue(columna.encabezado, None, 0.0))
             continue
 
         if hallazgo.estado != _ESTADO_OK:
             motivos.append(_aviso(_ESTADO_SIN_COINCIDENCIA, columna))
-            valores.append(ExtractedValue(columna.encabezado, None, 0.0, motor))
+            valores.append(ExtractedValue(columna.encabezado, None, 0.0))
             continue
 
         if confianza < umbral:
             motivos.append("low_confidence")
-        valores.append(ExtractedValue(columna.encabezado, hallazgo.valor, confianza, motor))
-
-    lecturas_control = [lectura, *(otra for otra in cache_alternativa if otra is not None)]
-    control = _extraer_control(lecturas_control, formato)
-    if control.supplier_rif is None:
-        motivos.append("unreadable_rif")
+        valores.append(ExtractedValue(columna.encabezado, hallazgo.valor, confianza))
 
     motivo = _unir_motivos(motivos)
     return ExtractionResult(
         values=valores,
-        control=control,
-        items=[],
         raw_text=lectura.texto,
         engines_used=motores,
         review_status="needs_review" if motivo is not None else "ok",

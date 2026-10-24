@@ -2,55 +2,21 @@
 
 **Spec:** [`spec.md`](./spec.md) · **Rol:** Agente 1
 
-> Las cuatro decisiones de esquema quedaron resueltas: **D-00**, **D-01**, **D-02** y
-> **D-03**. El DDL de abajo es el definitivo y no lleva comentarios pendientes.
+> Las decisiones de esquema **D-00**, **D-01**, **D-02** y **D-03** están
+> resueltas. El DDL de abajo es el definitivo.
 
 ## Migración inicial
 
-Un solo archivo: `app/db/migrations/001_inicial.sql`. Cubre las 5 tablas de
-`SCHEMAS.md` §3. Números en `DOUBLE PRECISION` (`CONSTITUTION.md` § Convenciones).
+Un solo archivo: `app/db/migrations/001_inicial.sql`. Cubre las 2 tablas de
+`SCHEMAS.md` §3.
 
 ```sql
-CREATE TABLE fiscal_profiles (
-    id            SERIAL PRIMARY KEY,
-    country_code  VARCHAR(2)   NOT NULL UNIQUE,
-    name          VARCHAR(80)  NOT NULL,
-    currency      VARCHAR(3)   NOT NULL DEFAULT 'VES'
-);
-
 CREATE TABLE invoices (
-    id               SERIAL PRIMARY KEY,
-    supplier_rif     VARCHAR(20),
-    serie            VARCHAR(20),
-    numero           VARCHAR(40),
-    issue_date       DATE,
-    fiscal_profile_id INTEGER REFERENCES fiscal_profiles(id),
-    dedupe_key       TEXT NOT NULL UNIQUE,
-    review_status    VARCHAR(20) NOT NULL DEFAULT 'needs_review',
-    review_reason    TEXT,
-    values           JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE invoice_items (
-    id           SERIAL PRIMARY KEY,
-    invoice_id   INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    line_number  INTEGER NOT NULL,
-    code         VARCHAR(40),
-    description  TEXT,
-    quantity     DOUBLE PRECISION,
-    unit_price   DOUBLE PRECISION,
-    amount       DOUBLE PRECISION
-);
-
-CREATE TABLE taxes (
-    id          SERIAL PRIMARY KEY,
-    invoice_id  INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
-    item_id     INTEGER REFERENCES invoice_items(id) ON DELETE CASCADE,
-    tax_type    VARCHAR(40) NOT NULL,
-    rate        DOUBLE PRECISION,
-    base_amount DOUBLE PRECISION,
-    amount      DOUBLE PRECISION NOT NULL DEFAULT 0
+    id            SERIAL PRIMARY KEY,
+    review_status VARCHAR(20) NOT NULL DEFAULT 'needs_review',
+    review_reason TEXT,
+    values        JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE ocr_runs (
@@ -63,40 +29,46 @@ CREATE TABLE ocr_runs (
     confidence     DOUBLE PRECISION,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX idx_invoices_review_status ON invoices(review_status);
+CREATE INDEX idx_ocr_runs_invoice       ON ocr_runs(invoice_id);
 ```
 
-## Las cuatro decisiones, resueltas
+## Las decisiones, resueltas
 
 ### D-00 — `values JSONB`, con el primer texto adentro
 
-Es la decisión que sostiene el emparejamiento. Un objeto por valor extraído:
+Un objeto por valor extraído, y **solo por las columnas que pidió el contador**:
 
 ```json
 [
-  { "frase": "Total", "encabezado": "Total a pagar",
-    "value": "116.00", "confidence": 92.0, "engine": "tesseract" }
+  { "frase": "Total a pagar", "encabezado": "Base imponible",
+    "value": 116.0, "confidence": 92.0 },
+  { "frase": "RIF", "encabezado": "RIF del proveedor",
+    "value": "J-31245678-7", "confidence": 88.5 }
 ]
 ```
 
 **El primer texto va guardado porque es la clave del emparejamiento.** Si se
 guardara solo el valor, con su posición, el contador podría cambiar
 `Total = Base imponible` por `Total = Total factura` después de escanear y cada
-columna recibiría el valor de otra. Se cambió de `float` a `JSONB` justamente para que
-el primer texto viaje con el valor (`SCHEMAS.md` §1.3, §3.1).
+columna recibiría el valor de otra (`SCHEMAS.md` §1.3, §3.1).
 
-Los cuatro campos de control **sí** van en columnas suyas, porque se filtran y se
-indexan. `supplier_rif` acepta `NULL`: sin RIF la factura se guarda igual.
+`value` es un número cuando el valor leído es numérico. Es texto cuando el
+contador pidió explícitamente una columna no numérica. La app **no inventa
+columnas de control** ni busca RIF, fecha, serie o número de factura por su
+cuenta.
 
 `values` **nunca se purga.** El contador puede volver a exportar cuando quiera.
 
-### D-01 — El motor va por valor, no en `ocr_runs`
+### D-01 — El motor no se guarda por valor
 
-EasyOCR entra **por primer texto**, así que una misma foto puede tener valores de
-Tesseract y de EasyOCR al mismo tiempo. Un solo campo `engine_version` en `ocr_runs`
-no alcanzaría a decir eso, y por eso el motor **va dentro de cada objeto del JSONB**.
+El motor de OCR es un dato interno de la corrida, no un dato del contador. Por eso
+`invoices.values` **no lleva `engine`**.
 
-En `ocr_runs` queda `engine_version` con el motor **principal** de la foto, para
-saber con qué se procesó. El detalle por campo está en `values`.
+`ocr_runs.engine_version` guarda el motor principal de la foto, para saber con qué
+se procesó. Si EasyOCR intervino en alguna columna, la corrida ya quedó registrada
+en `ocr_runs`; el detalle por valor no se guarda.
 
 ### D-02 — La imagen en disco
 
@@ -115,30 +87,31 @@ de quitar después (`CONSTITUTION.md` regla 1).
 
 ## Notas de diseño
 
-**No hay tablas de campos propios.** Existieron en un borrador y se eliminaron: el
-contador escribe pares `primer texto = segundo texto` en `plantilla.csv`
-(`SCHEMAS.md` §4). No hay `custom_fields` ni `invoice_custom_values`.
+**Las líneas de la factura no se modelan.** Una foto puede traer una o varias
+líneas; la app no las separa ni crea ítems. Solo guarda los valores de las columnas
+pedidas.
+
+**No hay tablas de campos propios.** El contador escribe pares
+`primer texto = segundo texto` en `plantilla.csv` (`SCHEMAS.md` §4). No hay
+`custom_fields` ni `invoice_custom_values`.
+
+**Sin deduplicación.** Cada foto crea su propia fila. No hay `dedupe_key` ni
+comparación de imágenes, textos o datos.
 
 **`review_status` con valor por defecto `needs_review`.** Si una factura se inserta
 sin que la 002 la valide, el estado por defecto obliga a revisión.
 
-**`dedupe_key` con `TEXT`, no `VARCHAR`.** Es una clave compuesta de cuatro partes
-con separador; una longitud fija artificial cortaría RIFs largos más adelante.
+**`review_status` y `review_reason` no van al Excel.** Se exponen en la API para
+que el contador vea qué columna falló, pero el CSV solo lleva los valores pedidos.
+`review_reason` alimenta `avisos.csv`.
 
-**Sin RIF, la clave se arma igual.** Con `supplier_rif` vacío, la `dedupe_key` queda
-`"|" + serie + "|" + numero + "|" + fecha`, que puede chocar entre proveedores
-distintos. Es el riesgo asumido de `SCHEMAS.md` §2.1: la factura entra sin
-protección contra duplicados y la app avisa con `unreadable_rif`.
-
-**Índices.** Uno en `review_status` y otro en `issue_date`, que son los filtros de
-`SCHEMAS.md` §7. Uno en `supplier_rif`, que es filtro de la 003. **Ninguno sobre el
+**Índices.** Uno en `review_status`, que es el filtro de la API, y otro en
+`ocr_runs.invoice_id`, que es la relación con la factura. **Ninguno sobre el
 JSONB**: los valores del contador no se filtran, se exportan.
 
-**`raw_text` a veces es `NULL`.** Solo se guarda cuando algún valor salió dudoso o no
-coincidió, que es cuando sirve para depurar. `CONSTITUTION.md` regla 4.
-
-**D-04 sigue abierta:** cómo se purga ese texto, y quién lo ejecuta. Es una
-sentencia `UPDATE`, no un módulo. Ver `spec.md` § Decisiones pendientes.
+**`raw_text` a veces es `NULL`.** Solo se guarda cuando algún valor salió dudoso o
+no coincidió, que es cuando sirve para depurar. Es dato interno
+(`CONSTITUTION.md` regla 4) y no hay purga automática.
 
 ## Módulos
 

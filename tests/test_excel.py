@@ -36,7 +36,6 @@ def _factura(
                 "encabezado": "Base imponible",
                 "value": valor,
                 "confidence": 90.0,
-                "engine": "tesseract",
             }
         ],
     }

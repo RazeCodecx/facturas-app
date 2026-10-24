@@ -6,8 +6,6 @@ error, se responde `500` con el mensaje del contador y no se emite un CSV a medi
 
 from __future__ import annotations
 
-from datetime import date
-
 from fastapi import APIRouter
 from fastapi.responses import Response
 
@@ -39,20 +37,12 @@ def _error_plantilla(exc: PlantillaError) -> Response:
     )
 
 
-def _facturas(
-    review_status: str | None, issue_date: date | None
-) -> list[dict[str, object]]:
-    return queries.listar_para_exportar(
-        review_status=review_status,
-        issue_date=issue_date.isoformat() if issue_date else None,
-    )
+def _facturas(review_status: str | None) -> list[dict[str, object]]:
+    return queries.listar_para_exportar(review_status=review_status)
 
 
 @router.get("/invoices.csv")
-def exportar_facturas(
-    review_status: str | None = None,
-    issue_date: date | None = None,
-) -> Response:
+def exportar_facturas(review_status: str | None = None) -> Response:
     """CSV de facturas: una cabecera con los segundos textos y una fila por factura."""
     try:
         plantilla = leer_plantilla()
@@ -60,18 +50,15 @@ def exportar_facturas(
         return _error_plantilla(exc)
 
     contenido = generar_csv(
-        _facturas(review_status, issue_date), plantilla.columnas, plantilla.formato
+        _facturas(review_status), plantilla.columnas, plantilla.formato
     )
     return _respuesta(contenido, "facturas.csv")
 
 
 @router.get("/avisos.csv")
-def exportar_avisos(
-    review_status: str | None = None,
-    issue_date: date | None = None,
-) -> Response:
+def exportar_avisos(review_status: str | None = None) -> Response:
     """CSV de avisos: sale siempre, aunque solo traiga la cabecera."""
-    contenido = generar_avisos(_facturas(review_status, issue_date))
+    contenido = generar_avisos(_facturas(review_status))
     return _respuesta(contenido, "avisos.csv")
 
 

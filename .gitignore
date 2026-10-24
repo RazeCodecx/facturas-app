@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-.specs/
 
 # Secretos. .env tiene la cadena de conexion con la contrasena.
 .env

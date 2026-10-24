@@ -18,7 +18,7 @@ from app.api import invoices as api_invoices
 from app.api import scan as api_scan
 from app.export.plantilla import Plantilla, PlantillaError
 from app.main import app as fastapi_app
-from app.models.invoice import Columna, ControlFields, ExtractedValue, ExtractionResult, Formato
+from app.models.invoice import Columna, ExtractedValue, ExtractionResult, Formato
 
 _png = io.BytesIO()
 Image.new("RGB", (24, 24), "white").save(_png, format="PNG")
@@ -33,86 +33,57 @@ class FakeQueries:
     """Base en memoria con la misma forma que `app.db.queries`."""
 
     def __init__(self) -> None:
-        self.facturas: dict[str, dict[str, Any]] = {}
+        self.facturas: dict[int, dict[str, Any]] = {}
         self.ocr_runs: list[dict[str, Any]] = []
         self.siguiente_id = 1
         self._lock = threading.Lock()
 
-    def armar_dedupe_key(self, rif, serie, numero, fecha) -> str:
-        return "|".join([rif or "", serie or "", numero or "", fecha or ""])
-
-    def insertar_factura(self, **campos: Any) -> int | None:
+    def insertar_factura(self, **campos: Any) -> int:
         with self._lock:
             return self._insertar(campos)
 
-    def _insertar(self, campos: dict[str, Any]) -> int | None:
-        clave = self.armar_dedupe_key(
-            campos["supplier_rif"],
-            campos["serie"],
-            campos["numero"],
-            campos["issue_date"],
-        )
-        if clave in self.facturas:
-            return None
-
+    def _insertar(self, campos: dict[str, Any]) -> int:
         invoice_id = self.siguiente_id
         self.siguiente_id += 1
-        self.facturas[clave] = {
+        self.facturas[invoice_id] = {
             "id": invoice_id,
-            "supplier_rif": campos["supplier_rif"],
-            "serie": campos["serie"],
-            "numero": campos["numero"],
-            "issue_date": campos["issue_date"],
             "review_status": campos["review_status"],
             "review_reason": campos["review_reason"],
             "values": campos["values"],
             "created_at": "2026-10-12T10:00:00Z",
-            "items": list(campos["items"]),
-            "taxes": list(campos["taxes"]),
         }
         return invoice_id
 
-    def existe_dedupe_key(self, clave: str) -> int | None:
-        factura = self.facturas.get(clave)
-        return factura["id"] if factura else None
-
     def obtener_factura(self, invoice_id: int) -> dict[str, Any] | None:
-        for factura in self.facturas.values():
-            if factura["id"] == invoice_id:
-                return factura
-        return None
+        return self.facturas.get(invoice_id)
 
     def registrar_ocr_run(self, **campos: Any) -> int:
         self.ocr_runs.append(campos)
         return len(self.ocr_runs)
 
-    def _filtrar(self, supplier_rif=None, issue_date=None, review_status=None):
+    def _filtrar(self, review_status=None):
         return [
             factura
             for factura in self.facturas.values()
-            if (not supplier_rif or factura["supplier_rif"] == supplier_rif)
-            and (not issue_date or factura["issue_date"] == issue_date)
-            and (not review_status or factura["review_status"] == review_status)
+            if (not review_status or factura["review_status"] == review_status)
         ]
 
-    def listar_facturas(self, *, limit=50, offset=0, **filtros):
-        return self._filtrar(**filtros)[offset : offset + limit]
+    def listar_facturas(self, *, limit=50, offset=0, review_status=None):
+        return self._filtrar(review_status)[offset : offset + limit]
 
-    def contar_facturas(self, **filtros):
-        return len(self._filtrar(**filtros))
+    def contar_facturas(self, review_status=None):
+        return len(self._filtrar(review_status))
 
-    def listar_para_exportar(self, **filtros):
-        return self._filtrar(**filtros)
+    def listar_para_exportar(self, review_status=None):
+        return self._filtrar(review_status)
 
 
 def _resultado(motivo: str | None = None) -> ExtractionResult:
-    valor = ExtractedValue("Base imponible", "116.00", 92.0, "tesseract")
+    valor = ExtractedValue("Base imponible", "116.00", 92.0)
     if motivo is not None:
-        valor = ExtractedValue("Base imponible", None, 0.0, "tesseract")
+        valor = ExtractedValue("Base imponible", None, 0.0)
     return ExtractionResult(
         values=[valor],
-        control=ControlFields("J-31245678-7", "001", "00001234", "2026-10-12"),
-        items=[],
         raw_text="TOTAL 116,00",
         engines_used=["tesseract"],
         review_status="needs_review" if motivo else "ok",
@@ -258,20 +229,19 @@ def test_scan_sin_motor_responde_503(
     assert respuesta.json()["detail"] == "No hay ningún motor de OCR disponible."
 
 
-def test_doble_toque_responde_409_con_el_id_existente(
+def test_la_misma_foto_se_registra_dos_veces(
     cliente: TestClient, fake: FakeQueries
 ) -> None:
     primera = _subir(cliente)
     segunda = _subir(cliente)
 
     assert primera.status_code == 201
-    assert segunda.status_code == 409
-    assert segunda.json()["invoice_id"] == primera.json()["invoice_id"]
-    assert len(fake.facturas) == 1
-    assert segunda.json()["detail"] == "Esta factura ya estaba registrada."
+    assert segunda.status_code == 201
+    assert primera.json()["invoice_id"] != segunda.json()["invoice_id"]
+    assert len(fake.facturas) == 2
 
 
-def test_dos_peticiones_simultaneas_dejan_una_sola_fila(
+def test_dos_peticiones_simultaneas_crean_dos_filas(
     fake: FakeQueries,
 ) -> None:
     def _pedir(_: int):
@@ -281,8 +251,8 @@ def test_dos_peticiones_simultaneas_dejan_una_sola_fila(
     with ThreadPoolExecutor(max_workers=2) as ejecutor:
         respuestas = list(ejecutor.map(_pedir, range(2)))
 
-    assert sorted(respuesta.status_code for respuesta in respuestas) == [201, 409]
-    assert len(fake.facturas) == 1
+    assert [respuesta.status_code for respuesta in respuestas] == [201, 201]
+    assert len(fake.facturas) == 2
 
 
 def test_scan_sigue_sin_easyocr(
@@ -351,10 +321,7 @@ def test_un_fallo_del_excel_no_rompe_el_escaneo(
 def test_listado_filtra_y_pagina(cliente: TestClient, fake: FakeQueries) -> None:
     _subir(cliente)
 
-    respuesta = cliente.get(
-        "/api/v1/invoices",
-        params={"supplier_rif": "J-31245678-7", "issue_date": "2026-10-12"},
-    )
+    respuesta = cliente.get("/api/v1/invoices")
 
     assert respuesta.status_code == 200
     assert respuesta.json()["total"] == 1
@@ -370,7 +337,7 @@ def test_detalle_y_404(cliente: TestClient, fake: FakeQueries) -> None:
     respuesta = cliente.get("/api/v1/invoices/1")
     assert respuesta.status_code == 200
     assert respuesta.json()["id"] == 1
-    assert respuesta.json()["items"] == []
+    assert "items" not in respuesta.json()
     assert "raw_text" not in respuesta.json()
 
     assert cliente.get("/api/v1/invoices/99").status_code == 404

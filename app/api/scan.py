@@ -14,7 +14,6 @@ from typing import Any
 
 import pytesseract
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import config
@@ -34,7 +33,6 @@ TIPOS_PERMITIDOS = {
     "image/heic": ".heic",
 }
 MOTIVOS_CON_TEXTO_CRUDO = ("no_match", "ambiguous", "low_confidence")
-DETALLE_DUPLICADA = "Esta factura ya estaba registrada."
 
 
 def _avisos(reason: str | None) -> list[str]:
@@ -68,7 +66,6 @@ def _valores(resultado: ExtractionResult, plantilla: Plantilla) -> list[dict[str
             "encabezado": columna.encabezado,
             "value": valor.value,
             "confidence": valor.confidence,
-            "engine": valor.engine,
         }
         for columna, valor in zip(plantilla.columnas, resultado.values, strict=False)
     ]
@@ -88,24 +85,8 @@ def _confianza(resultado: ExtractionResult) -> float | None:
     return sum(valores) / len(valores)
 
 
-def _duplicada(clave: str, resultado: ExtractionResult) -> JSONResponse:
-    """Responde `409` con el `invoice_id` de la factura que ya existía."""
-    existente = queries.existe_dedupe_key(clave)
-    if existente is None:
-        raise HTTPException(status_code=500, detail="No se pudo registrar la factura.")
-
-    factura = queries.obtener_factura(existente) or {}
-    cuerpo = ScanResponse(
-        invoice_id=existente,
-        review_status=factura.get("review_status") or resultado.review_status,
-        warnings=_avisos(factura.get("review_reason")),
-        detail=DETALLE_DUPLICADA,
-    )
-    return JSONResponse(status_code=409, content=cuerpo.model_dump(mode="json"))
-
-
 @router.post("/api/v1/invoices/scan", response_model=ScanResponse, status_code=201)
-async def escanear(file: UploadFile = File(...)) -> ScanResponse | JSONResponse:
+async def escanear(file: UploadFile = File(...)) -> ScanResponse:
     """Valida la imagen, la lee con la 002 y guarda la factura."""
     tipo = (file.content_type or "").lower()
     if tipo not in TIPOS_PERMITIDOS:
@@ -147,26 +128,11 @@ async def escanear(file: UploadFile = File(...)) -> ScanResponse | JSONResponse:
             detail="No hay ningún motor de OCR disponible.",
         ) from exc
 
-    clave = queries.armar_dedupe_key(
-        resultado.control.supplier_rif,
-        resultado.control.serie,
-        resultado.control.numero,
-        resultado.control.issue_date,
-    )
     invoice_id = queries.insertar_factura(
-        supplier_rif=resultado.control.supplier_rif,
-        serie=resultado.control.serie,
-        numero=resultado.control.numero,
-        issue_date=resultado.control.issue_date,
-        fiscal_profile_id=None,
         review_status=resultado.review_status,
         review_reason=resultado.review_reason,
         values=_valores(resultado, plantilla),
-        items=resultado.items,
-        taxes=[],
     )
-    if invoice_id is None:
-        return _duplicada(clave, resultado)
 
     original, convertida = _guardar_imagenes(
         datos, TIPOS_PERMITIDOS[tipo], convertida_pil

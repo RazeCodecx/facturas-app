@@ -8,7 +8,6 @@ import pytest
 
 from app.export import csv as modulo_csv
 from app.export.plantilla import (
-    COLUMNAS_POR_DEFECTO,
     MENSAJE_FORMATO,
     PlantillaError,
     leer_columnas,
@@ -31,24 +30,29 @@ def _leer(tmp_path: Path, texto: str, *, bom: bool = True):
     return leer_plantilla(ruta, tmp_path / ".marcador")
 
 
-def test_archivo_vacio_devuelve_defaults_y_escribe_mensaje(tmp_path: Path) -> None:
+def test_archivo_vacio_es_error_y_escribe_mensaje(tmp_path: Path) -> None:
     ruta = tmp_path / "plantilla.csv"
     ruta.write_bytes(BOM)
 
-    plantilla = leer_plantilla(ruta, tmp_path / ".marcador")
+    with pytest.raises(PlantillaError):
+        leer_plantilla(ruta, tmp_path / ".marcador")
 
-    assert plantilla.columnas == COLUMNAS_POR_DEFECTO
-    assert plantilla.columnas == leer_plantilla(ruta, tmp_path / ".marcador").columnas
     escrito = ruta.read_bytes()
     assert escrito.startswith(BOM)
     assert MENSAJE_FORMATO.encode("utf-8") in escrito
 
 
-def test_solo_lineas_vacias_es_vacio(tmp_path: Path) -> None:
+def test_solo_lineas_vacias_es_error(tmp_path: Path) -> None:
     ruta = tmp_path / "plantilla.csv"
     ruta.write_bytes(BOM + b"\n\n   \n")
 
-    assert leer_columnas(ruta) == COLUMNAS_POR_DEFECTO
+    with pytest.raises(PlantillaError):
+        leer_columnas(ruta)
+
+
+def test_solo_configuracion_sin_columnas_es_error(tmp_path: Path) -> None:
+    with pytest.raises(PlantillaError):
+        _leer(tmp_path, "#miles=. #decimal=,\n")
 
 
 def test_una_sola_linea_devuelve_una_columna(tmp_path: Path) -> None:
@@ -176,10 +180,11 @@ def test_mensaje_explica_las_tres_opciones_en_dos_idiomas(tmp_path: Path) -> Non
     ruta = tmp_path / "plantilla.csv"
     ruta.write_bytes(BOM)
 
-    leer_plantilla(ruta, tmp_path / ".marcador")
+    with pytest.raises(PlantillaError):
+        leer_plantilla(ruta, tmp_path / ".marcador")
     mensaje = ruta.read_text(encoding="utf-8-sig")
 
-    for palabra in ("miles", "decimal", "acentos", "thousands", "separator", "default"):
+    for palabra in ("columna", "miles", "decimal", "acentos", "thousands", "separator"):
         assert palabra in mensaje
 
 
@@ -188,11 +193,13 @@ def test_el_mensaje_se_escribe_una_sola_vez(tmp_path: Path) -> None:
     marcador = tmp_path / ".marcador"
     ruta.write_bytes(BOM)
 
-    leer_plantilla(ruta, marcador)
+    with pytest.raises(PlantillaError):
+        leer_plantilla(ruta, marcador)
     assert marcador.exists()
 
     ruta.write_bytes(BOM)
-    leer_plantilla(ruta, marcador)
+    with pytest.raises(PlantillaError):
+        leer_plantilla(ruta, marcador)
 
     assert ruta.read_bytes() == BOM
 

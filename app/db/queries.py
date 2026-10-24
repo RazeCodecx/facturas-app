@@ -16,116 +16,30 @@ from typing import Any
 from app.db.pool import conexion
 
 
-def armar_dedupe_key(
-    supplier_rif: str | None,
-    serie: str | None,
-    numero: str | None,
-    issue_date: str | None,
-) -> str:
-    """Construye la clave de duplicado (`SCHEMAS.md` 2.1).
-
-    Las partes que no se pudieron leer van vacias. Con el RIF vacio la clave puede
-    chocar entre proveedores distintos: es el riesgo asumido de la seccion 2.1, y
-    por eso la app avisa con `unreadable_rif` en vez de descartar la factura.
-    """
-    return "|".join([supplier_rif or "", serie or "", numero or "", issue_date or ""])
-
-
 def insertar_factura(
     *,
-    supplier_rif: str | None,
-    serie: str | None,
-    numero: str | None,
-    issue_date: str | None,
-    fiscal_profile_id: int | None,
     review_status: str,
     review_reason: str | None,
     values: Sequence[dict[str, Any]],
-    items: Sequence[dict[str, Any]],
-    taxes: Sequence[dict[str, Any]],
-) -> int | None:
-    """Guarda una factura con sus lineas e impuestos.
+) -> int:
+    """Guarda una factura con los valores que pidio el contador.
 
-    Devuelve el `id` de la factura creada, o `None` si ya existia una con la
-    misma `dedupe_key`. El `ON CONFLICT DO NOTHING` resuelve la carrera del doble
-    toque del Atajo sin necesidad de un lock: el UNIQUE es la garantia.
+    Cada foto crea una fila. La app no deduplica: si la misma foto llega dos
+    veces, se registra dos veces.
     """
-    dedupe_key = armar_dedupe_key(supplier_rif, serie, numero, issue_date)
     payload = json.dumps(list(values), ensure_ascii=False)
 
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             """
-                INSERT INTO invoices (
-                    supplier_rif, serie, numero, issue_date, fiscal_profile_id,
-                    dedupe_key, review_status, review_reason, values
-                )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-                ON CONFLICT (dedupe_key) DO NOTHING
+                INSERT INTO invoices (review_status, review_reason, values)
+                VALUES (%s, %s, %s::jsonb)
                 RETURNING id
                 """,
-            (
-                supplier_rif,
-                serie,
-                numero,
-                issue_date,
-                fiscal_profile_id,
-                dedupe_key,
-                review_status,
-                review_reason,
-                payload,
-            ),
+            (review_status, review_reason, payload),
         )
         fila = cur.fetchone()
-        if fila is None:
-            return None
-        invoice_id = fila["id"]
-
-        if items:
-            cur.executemany(
-                """
-                    INSERT INTO invoice_items (
-                        invoice_id, line_number, code, description,
-                        quantity, unit_price, amount
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """,
-                [
-                    (
-                        invoice_id,
-                        item["line_number"],
-                        item.get("code"),
-                        item.get("description"),
-                        item.get("quantity"),
-                        item.get("unit_price"),
-                        item.get("amount"),
-                    )
-                    for item in items
-                ],
-            )
-
-        if taxes:
-            cur.executemany(
-                """
-                    INSERT INTO taxes (
-                        invoice_id, item_id, tax_type, rate, base_amount, amount
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                [
-                    (
-                        invoice_id,
-                        tax.get("item_id"),
-                        tax["tax_type"],
-                        tax.get("rate"),
-                        tax.get("base_amount"),
-                        tax.get("amount", 0),
-                    )
-                    for tax in taxes
-                ],
-            )
-
-    return invoice_id
+        return fila["id"]
 
 
 def registrar_ocr_run(
@@ -166,7 +80,7 @@ def registrar_ocr_run(
 
 
 def obtener_factura(invoice_id: int) -> dict[str, Any] | None:
-    """Devuelve una factura con sus items e impuestos, o `None` si no existe.
+    """Devuelve una factura o `None` si no existe.
 
     Nunca trae `raw_text`: el texto reconocido es dato interno
     (`CONSTITUTION.md` regla 4).
@@ -174,86 +88,39 @@ def obtener_factura(invoice_id: int) -> dict[str, Any] | None:
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             """
-                SELECT id, supplier_rif, serie, numero, issue_date,
-                       fiscal_profile_id, review_status, review_reason,
-                       values, created_at
+                SELECT id, review_status, review_reason, values, created_at
                 FROM invoices
                 WHERE id = %s
                 """,
             (invoice_id,),
         )
-        factura = cur.fetchone()
-        if factura is None:
-            return None
-
-        cur.execute(
-            """
-                SELECT id, line_number, code, description,
-                       quantity, unit_price, amount
-                FROM invoice_items
-                WHERE invoice_id = %s
-                ORDER BY line_number
-                """,
-            (invoice_id,),
-        )
-        factura["items"] = cur.fetchall()
-
-        cur.execute(
-            """
-                SELECT id, item_id, tax_type, rate, base_amount, amount
-                FROM taxes
-                WHERE invoice_id = %s
-                """,
-            (invoice_id,),
-        )
-        factura["taxes"] = cur.fetchall()
-
-    return factura
+        return cur.fetchone()
 
 
-def _filtros(
-    supplier_rif: str | None,
-    issue_date: str | None,
-    review_status: str | None,
-) -> tuple[str, list[Any]]:
+def _filtros(review_status: str | None) -> tuple[str, list[Any]]:
     """Arma el `WHERE` de los listados. Filtra en SQL, nunca en Python."""
-    condiciones: list[str] = []
-    argumentos: list[Any] = []
-
-    if supplier_rif:
-        condiciones.append("supplier_rif = %s")
-        argumentos.append(supplier_rif)
-    if issue_date:
-        condiciones.append("issue_date = %s")
-        argumentos.append(issue_date)
-    if review_status:
-        condiciones.append("review_status = %s")
-        argumentos.append(review_status)
-
-    where = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
-    return where, argumentos
+    if not review_status:
+        return "", []
+    return "WHERE review_status = %s", [review_status]
 
 
 def listar_facturas(
     *,
-    supplier_rif: str | None = None,
-    issue_date: str | None = None,
     review_status: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Lista facturas con filtros opcionales. El filtro va en el SELECT.
+    """Lista facturas con filtro opcional. El filtro va en el SELECT.
 
     Nunca se lee todo y se filtra en Python: con lotes de miles de facturas eso
     carga la base sin motivo.
     """
-    where, argumentos = _filtros(supplier_rif, issue_date, review_status)
+    where, argumentos = _filtros(review_status)
 
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-                SELECT id, supplier_rif, serie, numero, issue_date,
-                       review_status, review_reason, values, created_at
+                SELECT id, review_status, review_reason, values, created_at
                 FROM invoices
                 {where}
                 ORDER BY created_at DESC, id DESC
@@ -266,22 +133,19 @@ def listar_facturas(
 
 def listar_para_exportar(
     *,
-    supplier_rif: str | None = None,
-    issue_date: str | None = None,
     review_status: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Devuelve todas las facturas que cumplen los filtros, sin paginar.
+    """Devuelve todas las facturas que cumplen el filtro, sin paginar.
 
     Es la consulta del CSV: incluye las `needs_review` y respeta el orden de
     llegada, para que el contador vea el lote como lo escaneó.
     """
-    where, argumentos = _filtros(supplier_rif, issue_date, review_status)
+    where, argumentos = _filtros(review_status)
 
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(
             f"""
-                SELECT id, supplier_rif, serie, numero, issue_date,
-                       review_status, review_reason, values, created_at
+                SELECT id, review_status, review_reason, values, created_at
                 FROM invoices
                 {where}
                 ORDER BY created_at ASC, id ASC
@@ -291,33 +155,14 @@ def listar_para_exportar(
         return cur.fetchall()
 
 
-def contar_facturas(
-    *,
-    supplier_rif: str | None = None,
-    issue_date: str | None = None,
-    review_status: str | None = None,
-) -> int:
-    """Cuenta las facturas que cumplen los filtros, para la paginacion."""
-    where, argumentos = _filtros(supplier_rif, issue_date, review_status)
+def contar_facturas(*, review_status: str | None = None) -> int:
+    """Cuenta las facturas que cumplen el filtro, para la paginacion."""
+    where, argumentos = _filtros(review_status)
 
     with conexion() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT count(*) AS total FROM invoices {where}", argumentos)
         fila = cur.fetchone()
         return int(fila["total"])
-
-
-def existe_dedupe_key(dedupe_key: str) -> int | None:
-    """Devuelve el id de la factura con esa clave, o `None`.
-
-    Lo usa el endpoint para responder `409` con el `invoice_id` que ya existia.
-    """
-    with conexion() as conn, conn.cursor() as cur:
-        cur.execute(
-            "SELECT id FROM invoices WHERE dedupe_key = %s",
-            (dedupe_key,),
-        )
-        fila = cur.fetchone()
-        return fila["id"] if fila else None
 
 
 def existe_factura() -> bool:
@@ -362,9 +207,7 @@ def aplicar_migraciones() -> None:
 
 __all__ = [
     "aplicar_migraciones",
-    "armar_dedupe_key",
     "contar_facturas",
-    "existe_dedupe_key",
     "existe_factura",
     "insertar_factura",
     "listar_facturas",

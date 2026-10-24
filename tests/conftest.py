@@ -121,13 +121,11 @@ def _valores(ejemplo: bool = False) -> list[dict[str, object]]:
             "encabezado": "Total factura",
             "value": "116.00" if ejemplo else "1234.56",
             "confidence": 92.0,
-            "engine": "tesseract",
         },
         {
             "frase": "IVA",
             "encabezado": "Monto IVA",
             "value": "197.13",
             "confidence": 88.5,
-            "engine": "easyocr",
         },
     ]

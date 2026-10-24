@@ -20,7 +20,7 @@ CABECERA = ("invoice_id", "frase", "columna", "motivo")
 _AVISO_CON_COLUMNA = re.compile(
     r'^(?P<motivo>[a-z_]+):(?P<frase>.*?) \(columna "(?P<columna>.*)"\)$'
 )
-_MOTIVOS_SIN_COLUMNA = {"low_confidence", "unreadable_rif"}
+_MOTIVOS_SIN_COLUMNA = {"low_confidence"}
 
 
 def _partir_aviso(aviso: str) -> tuple[str, str, str]:

@@ -7,7 +7,6 @@ viajan a la 003. Ver `specs/002-ocr-factura/design.md` y `SCHEMAS.md` §1, §3.1
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -40,22 +39,11 @@ class Formato:
 
 @dataclass
 class ExtractedValue:
-    """Un valor extraído. No lleva el primer texto: la 004 ya tiene las columnas."""
+    """Un valor extraído. El primer texto se agrega al guardar, desde la plantilla."""
 
     encabezado: str
-    value: str | None
+    value: float | str | None
     confidence: float
-    engine: str
-
-
-@dataclass
-class ControlFields:
-    """Los 4 campos internos de deduplicación (`SCHEMAS.md` §2)."""
-
-    supplier_rif: str | None = None
-    serie: str | None = None
-    numero: str | None = None
-    issue_date: str | None = None
 
 
 @dataclass
@@ -63,8 +51,6 @@ class ExtractionResult:
     """Lo que la 002 entrega a la 003, en el orden de las columnas recibidas."""
 
     values: list[ExtractedValue] = field(default_factory=list)
-    control: ControlFields = field(default_factory=ControlFields)
-    items: list[dict[str, Any]] = field(default_factory=list)
     raw_text: str = ""
     engines_used: list[str] = field(default_factory=list)
     review_status: str = "ok"
@@ -73,7 +59,6 @@ class ExtractionResult:
 
 __all__ = [
     "Columna",
-    "ControlFields",
     "ExtractedValue",
     "ExtractionResult",
     "Formato",

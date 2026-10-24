@@ -20,17 +20,12 @@ def _valor(frase: str, value) -> dict[str, object]:
         "encabezado": frase.title(),
         "value": value,
         "confidence": 90.0,
-        "engine": "tesseract",
     }
 
 
 def _factura(invoice_id: int, valores: list[dict[str, object]], motivo: str | None = None):
     return {
         "id": invoice_id,
-        "supplier_rif": "J-31245678-7",
-        "serie": "001",
-        "numero": "00001234",
-        "issue_date": "2026-10-12",
         "review_status": "needs_review" if motivo else "ok",
         "review_reason": motivo,
         "values": valores,
@@ -174,12 +169,6 @@ def test_avisos_parsea_frase_columna_y_motivo() -> None:
     assert filas[0] == list(CABECERA)
     assert filas[1] == ["142", "Total a pagar", "Base imponible", "no_match"]
     assert filas[2] == ["142", "", "", "low_confidence"]
-
-
-def test_avisos_de_rif_ilegible_no_tienen_columna() -> None:
-    filas = _filas(generar_avisos([_factura(7, [], motivo="unreadable_rif")]))
-
-    assert filas[1] == ["7", "", "", "unreadable_rif"]
 
 
 def test_avisos_sin_motivo_solo_cabecera() -> None:

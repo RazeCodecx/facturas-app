@@ -11,7 +11,7 @@ import pytest
 
 from app.models.invoice import Columna, Formato
 from app.ocr.extract import extraer
-from app.ocr.normalize import fecha, formatear_numero, numero
+from app.ocr.normalize import numero
 from app.ocr.tesseract_engine import Lectura, Palabra
 
 VENEZOLANO = Formato(miles=".", decimal=",")
@@ -67,18 +67,6 @@ class TestNormalizacion:
     def test_texto_que_no_es_numero(self):
         assert numero("Verificable", Formato()) is None
 
-    def test_formateo_con_dos_decimales(self):
-        assert formatear_numero(116.0) == "116.00"
-
-    def test_fecha_dia_primero(self):
-        assert fecha("12/10/2026") == "2026-10-12"
-
-    def test_fecha_iso(self):
-        assert fecha("2026-10-13") == "2026-10-13"
-
-    def test_fecha_invalida(self):
-        assert fecha("31/02/2026") is None
-
 
 class TestBusqueda:
     """T2.2 a T2.8: búsqueda del primer texto y avisos."""
@@ -88,14 +76,14 @@ class TestBusqueda:
         columnas = [_columna("Total a pagar", "Base imponible")]
         resultado = extraer(lectura, columnas, VENEZOLANO, UMBRAL)
 
-        assert resultado.values[0].value == "116.00"
+        assert resultado.values[0].value == 116.0
         assert resultado.review_status == "ok"
 
     def test_no_coincide_dentro_de_subtotal(self):
         lectura = _lectura("SUBTOTAL 100,00 IVA 16,00 TOTAL 116,00")
         resultado = extraer(lectura, [_columna("Total", "Base imponible")], VENEZOLANO, UMBRAL)
 
-        assert resultado.values[0].value == "116.00"
+        assert resultado.values[0].value == 116.0
 
     def test_sin_coincidencia_no_inventa(self):
         lectura = _lectura("SUBTOTAL 100,00")
@@ -117,19 +105,19 @@ class TestBusqueda:
         columnas = [_columna("Neto", "Total a pagar"), _columna("Total general", "Neto")]
         resultado = extraer(lectura, columnas, VENEZOLANO, UMBRAL)
 
-        assert [valor.value for valor in resultado.values] == ["116.00", "116.00"]
+        assert [valor.value for valor in resultado.values] == [116.0, 116.0]
 
     def test_mayusculas_no_importan(self):
         lectura = _lectura("TOTAL A PAGAR 116,00")
         resultado = extraer(lectura, [_columna("total a pagar")], VENEZOLANO, UMBRAL)
 
-        assert resultado.values[0].value == "116.00"
+        assert resultado.values[0].value == 116.0
 
     def test_tildes_se_ignoran_por_defecto(self):
         lectura = _lectura("RAZÓN SOCIAL 100")
         resultado = extraer(lectura, [_columna("Razon social")], Formato(), UMBRAL)
 
-        assert resultado.values[0].value == "100.00"
+        assert resultado.values[0].value == 100.0
 
     def test_acentos_apagados_exige_la_tilde(self):
         lectura = _lectura("RAZÓN SOCIAL 100")
@@ -142,7 +130,7 @@ class TestBusqueda:
         lectura = _lectura("TOTAL\n116,00")
         resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
 
-        assert resultado.values[0].value == "116.00"
+        assert resultado.values[0].value == 116.0
 
     def test_primer_texto_mal_escrito_avisa(self):
         lectura = _lectura("TOTAL 116,00")
@@ -173,7 +161,7 @@ class TestObjetoDeSalida:
         uno = extraer(lectura, [_columna("Total", "Base imponible")], VENEZOLANO, UMBRAL)
         otro = extraer(lectura, [_columna("Total", "Neto")], VENEZOLANO, UMBRAL)
 
-        assert uno.values[0].value == otro.values[0].value == "116.00"
+        assert uno.values[0].value == otro.values[0].value == 116.0
 
     def test_orden_de_los_valores(self):
         lectura = _lectura("IVA 16,00 TOTAL 116,00 NETO 100,00")
@@ -194,12 +182,6 @@ class TestObjetoDeSalida:
 
         assert resultado.raw_text == "TOTAL 116,00"
 
-    def test_items_queda_vacio(self):
-        lectura = _lectura("TOTAL 116,00")
-        resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
-
-        assert resultado.items == []
-
     def test_no_existe_unbalanced_total(self):
         lectura = _lectura("TOTAL 116,00")
         resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
@@ -213,34 +195,29 @@ class TestObjetoDeSalida:
             columna.encabezado = "Neto"  # type: ignore[misc]
 
 
-class TestCamposDeControl:
-    """T2.13 y CA-52: los 4 campos internos, sin par y sin ocupar columna."""
+class TestColumnasDeTexto:
+    """Solo se extrae lo que el contador pidió en plantilla.csv."""
 
-    def test_extrae_los_cuatro(self):
-        lectura = _lectura(
-            "RIF: J-31245678-7\nFactura N° 001-00001234\nFecha 12/10/2026\nTotal 116,00"
-        )
-        resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
-
-        assert resultado.control.supplier_rif == "J-31245678-7"
-        assert resultado.control.serie == "001"
-        assert resultado.control.numero == "00001234"
-        assert resultado.control.issue_date == "2026-10-12"
-        assert resultado.review_status == "ok"
-
-    def test_no_ocupan_columna(self):
+    def test_rif_pedido_se_guarda_como_texto(self):
         lectura = _lectura("RIF: J-31245678-7\nTotal 116,00")
+        columnas = [_columna("RIF", "RIF del proveedor"), _columna("Total")]
+        resultado = extraer(lectura, columnas, VENEZOLANO, UMBRAL)
+
+        assert resultado.values[0].value == "J-31245678-7"
+        assert resultado.values[1].value == 116.0
+
+    def test_fecha_pedida_se_guarda_tal_cual(self):
+        lectura = _lectura("Fecha 12/10/2026")
+        resultado = extraer(lectura, [_columna("Fecha")], VENEZOLANO, UMBRAL)
+
+        assert resultado.values[0].value == "12/10/2026"
+
+    def test_no_se_buscan_campos_de_control(self):
+        lectura = _lectura("RIF: J-31245678-7\nFactura N° 001-00001234\nTotal 116,00")
         resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
 
-        assert len(resultado.values) == 1
-        assert resultado.values[0].encabezado == "Total"
-
-    def test_rif_ilegible_avisa(self):
-        lectura = _lectura("Total 116,00")
-        resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
-
-        assert resultado.control.supplier_rif is None
-        assert "unreadable_rif" in resultado.review_reason
+        assert not hasattr(resultado, "control")
+        assert resultado.review_reason is None
 
 
 class TestCombinacionDeMotores:
@@ -268,8 +245,7 @@ class TestCombinacionDeMotores:
             lambda: _lectura("TOTAL 116,00", motor="easyocr"),
         )
 
-        assert resultado.values[0].value == "116.00"
-        assert resultado.values[0].engine == "easyocr"
+        assert resultado.values[0].value == 116.0
         assert "easyocr" in resultado.engines_used
 
     def test_entra_una_sola_vez_para_varias_columnas(self):
@@ -285,7 +261,7 @@ class TestCombinacionDeMotores:
 
         assert len(llamadas) == 1
 
-    def test_dos_columnas_pueden_tener_motores_distintos(self):
+    def test_dos_columnas_pueden_usar_motores_distintos(self):
         lectura = _lectura("IVA 16,00")
         columnas = [_columna("IVA", "Monto del IVA"), _columna("Total", "Base imponible")]
         resultado = extraer(
@@ -296,16 +272,15 @@ class TestCombinacionDeMotores:
             lambda: _lectura("TOTAL 116,00", motor="easyocr"),
         )
 
-        assert resultado.values[0].engine == "tesseract"
-        assert resultado.values[0].value == "16.00"
-        assert resultado.values[1].engine == "easyocr"
-        assert resultado.values[1].value == "116.00"
+        assert resultado.values[0].value == 16.0
+        assert resultado.values[1].value == 116.0
+        assert resultado.engines_used == ["tesseract", "easyocr"]
 
     def test_confianza_baja_se_marca(self):
         lectura = _lectura("TOTAL 116,00", confianza=40.0)
         resultado = extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL)
 
-        assert resultado.values[0].value == "116.00"
+        assert resultado.values[0].value == 116.0
         assert "low_confidence" in resultado.review_reason
 
     def test_otros_idiomas(self):
@@ -313,4 +288,4 @@ class TestCombinacionDeMotores:
         resultado = extraer(lectura, [_columna("注文番号", "Referencia")], Formato(), UMBRAL)
 
         assert resultado.values[0].encabezado == "Referencia"
-        assert resultado.values[0].value == "12345.00"
+        assert resultado.values[0].value == 12345.0

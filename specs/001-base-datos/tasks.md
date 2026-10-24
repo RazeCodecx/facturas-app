@@ -5,8 +5,8 @@
 > Checklist en orden. Cada tarea dice cómo se comprueba. Los criterios `CA-xx` son
 > los de la spec. **Una tarea a la vez** (`AGENTS.md` § No hagas).
 
-**Las cuatro decisiones de esquema (D-00 a D-03) están resueltas** y escritas en
-`design.md`. Esta feature ya no tiene bloqueos.
+**Las decisiones de esquema (D-00 a D-03) están resueltas** y escritas en
+`design.md`. Esta feature no tiene bloqueos.
 
 ---
 
@@ -35,29 +35,29 @@ Ninguna tarea de esta fase bloquea a ninguna.
 ## Fase 2 — Esquema y acceso
 
 - [X] **T2.1** `app/db/migrations/001_inicial.sql` con el esquema de
-      `design.md`, **sin comentarios pendientes**. Todos los importes en
-      `DOUBLE PRECISION`, nunca `NUMERIC` ni `FLOAT`.
+      `design.md`, **sin comentarios pendientes**. Solo `invoices` y `ocr_runs`.
       *Verificable:* corre limpia contra una base vacía.
-- [X] **T2.2** El bloque `invoices` lleva `values JSONB NOT NULL DEFAULT '[]'` y
-      **sin columna `operator`**.
-      *Verificable:* el `INSERT` de una factura sin RIF funciona con
-      `supplier_rif` en `NULL`. → CA-52
-- [X] **T2.3** Fila de Venezuela en `fiscal_profiles`.
-      *Verificable:* `SELECT * FROM fiscal_profiles` devuelve una fila `VE`/`VES`.
+- [X] **T2.2** `invoices` lleva `values JSONB NOT NULL DEFAULT '[]'` y **sin
+      columna `operator` ni campos de control**.
+      *Verificable:* una factura se inserta sin RIF, serie, número ni fecha.
+- [X] **T2.3** No existe `fiscal_profiles` ni ninguna tabla de líneas o
+      impuestos.
+      *Verificable:* `information_schema.tables` solo devuelve `invoices`,
+      `ocr_runs` y `schema_migrations`.
 - [X] **T2.4** `app/db/pool.py` con el connection pool de psycopg.
       *Verificable:* abre y cierra conexión contra la base real.
-- [X] **T2.5** `app/db/queries.py` con el INSERT de factura, items, taxes y
-      `ocr_runs`, y los SELECT de listado y detalle.
+- [X] **T2.5** `app/db/queries.py` con el INSERT de factura y de `ocr_runs`, y
+      los SELECT de listado y detalle. Sin items ni taxes.
       *Verificable:* **ningún endpoint contiene SQL**.
 - [X] **T2.6** `tests/test_db.py`: crea el esquema en una base aislada, inserta
-      una factura con sus items y taxes, la consulta, y verifica que
-      `dedupe_key` rechaza el duplicado.
+      dos veces la misma factura y verifica que quedan **dos filas**.
       *Verificable:* pasa sin tocar la base del usuario. → CA-12
 - [X] **T2.7** `tests/test_db.py` verifica que un importe entero se relee exacto,
-      que los valores del contador sobreviven un ciclo de escritura y lectura
-      **con su primer texto intacto**, y que el detalle no trae `raw_text`.
+      que `values` conserva `frase`, `encabezado`, `value` y `confidence`
+      **sin `engine`**, y que el detalle no trae `raw_text`.
       *Verificable:* pasa. → CA-13, CA-14, CA-51
-- [X] **T2.8** `tests/test_db.py` con una factura sin `supplier_rif`.
-      *Verificable:* se guarda con `NULL` y `review_reason` con `unreadable_rif`.
-      → CA-52
+- [X] **T2.8** `tests/test_db.py` con una factura con columnas sin coincidencia y
+      con `raw_text` solo cuando hubo dudas.
+      *Verificable:* se guarda con `value` en `NULL`, `needs_review` y el motivo
+      correspondiente. → CA-52
 - [X] **T2.9** `ruff check .` sin hallazgos y `pytest` en verde.

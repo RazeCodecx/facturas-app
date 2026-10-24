@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 006 — Sin columnas ni campos prefabricados (2026-10-21)
+
+### Hecho
+
+- `plantilla.csv` es la única fuente de columnas. Se eliminó
+  `COLUMNAS_POR_DEFECTO`; un archivo sin líneas de columna es error.
+- `app/ocr/extract.py`: se eliminaron los cuatro campos de control (RIF, serie,
+  número y fecha) y la conversión de fechas. Solo se busca lo que pide el
+  contador. El valor es numérico cuando se puede leer como número; si no, se
+  guarda el primer texto tal cual.
+- El motor de OCR ya no se guarda dentro de `invoices.values`; queda solo como
+  dato interno en `ocr_runs.engine_version`.
+- `app/ocr/normalize.py`: se eliminaron `fecha()` y `formatear_numero()`.
+- `invoices` queda con `id`, `review_status`, `review_reason`, `values` y
+  `created_at`. Se eliminaron los campos de control, `fiscal_profile_id` y
+  `dedupe_key`.
+- Sin deduplicación: cada foto crea una fila, aunque sea la misma foto.
+- API: la lista y la exportación solo filtran por `review_status`; el detalle ya
+  no trae líneas ni impuestos; se eliminó el `409`.
+- `SCHEMAS.md`, `CONSTITUTION.md`, `AGENTS.md` y `README.md` actualizados.
+
 ## 005 — Excel de salida en tiempo real (2026-10-20)
 
 ### Hecho

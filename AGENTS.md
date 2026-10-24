@@ -6,9 +6,10 @@ contador abre y edita en Excel. Además, el valor extraído de la imagen se env�
 tiempo real al Excel cuya ruta exacta se indica en `plantilla.csv`.
 
 El usuario final son contadores, en su mayoría no técnicos, que procesan lotes de
-facturas al día. Región inicial: Venezuela. **El contador es el actor final:** la
-app produce el CSV y ahí termina, no reimporta ni valida lo que él escriba
-después. Todo corre en la PC local, sin servicios externos.
+facturas al día. **El contador es el actor final:** la app produce el CSV y ahí
+termina, no reimporta ni valida lo que él escriba después. Todo corre en la PC
+local, sin servicios externos. La app no asume ningún país ni formato fiscal:
+solo busca las columnas que el contador escriba en `plantilla.csv`.
 
 **La app no lleva autenticación**, pero el servidor escucha en `0.0.0.0`: toda la red
 Wi-Fi puede exportar los datos fiscales. Que la red sea privada y con clave.
@@ -36,6 +37,7 @@ Wi-Fi puede exportar los datos fiscales. Que la red sea privada y con clave.
 - `tests/` — suite pytest, con `mocks` de imágenes y texto OCR
 **No hay carpeta `docs/`.** No existe material de consulta suelto: todo lo que hay son
 reglas, contratos y specs.
+**no crees un nuevo modulo** en caso de que debamos cambiar el enfoque o cambiar algo, simplemente modifica el modulo actual, imprementando y descartando, lo que se pide
 
 ## No hagas
 
@@ -58,5 +60,5 @@ reglas, contratos y specs.
 
 - `CONSTITUTION.md` — stack, reglas inquebrantables, workflow, convenciones,
   checklist de calidad. **Leer antes de escribir código.**
-- `SCHEMAS.md` — extracción, `plantilla.csv`, campos de control, tablas SQL,
-  formato del CSV, contrato de API. **Consultar antes de tocar la base o el CSV.**
+- `SCHEMAS.md` — extracción, `plantilla.csv`, tablas SQL, formato del CSV,
+  contrato de API. **Consultar antes de tocar la base o el CSV.**

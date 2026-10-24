@@ -1,4 +1,4 @@
-"""Normalización de números y fechas leídos por el OCR.
+"""Normalización de los números leídos por el OCR.
 
 El formato numérico lo pone el contador en la línea de configuración de
 `plantilla.csv` y llega acá desde la 004 (`SCHEMAS.md` §4.4, §5.4).
@@ -12,12 +12,10 @@ from __future__ import annotations
 
 import math
 import re
-from datetime import date
 
 from app.models.invoice import Formato
 
 _PATRON_NUMERO = re.compile(r"\d[\d.,]*")
-_PATRON_FECHA = re.compile(r"\b(\d{1,4})[/.\-](\d{1,2})[/.\-](\d{1,4})\b")
 _SIGNOS = "-−–"
 _FORMATO_POR_DEFECTO = Formato()
 
@@ -110,33 +108,4 @@ def numero(token: str, formato: Formato) -> float | None:
     return -valor if negativo else valor
 
 
-def formatear_numero(valor: float) -> str:
-    """Devuelve el número con punto decimal y 2 decimales, listo para el CSV."""
-    return f"{valor:.2f}"
-
-
-def fecha(token: str) -> str | None:
-    """Devuelve la fecha del token en ISO (`YYYY-MM-DD`), o `None`.
-
-    Se acepta día primero (`DD/MM/AAAA`), que es la convención de Venezuela, y
-    también `AAAA-MM-DD`.
-    """
-    coincidencia = _PATRON_FECHA.search(token.strip())
-    if coincidencia is None:
-        return None
-
-    primero, segundo, tercero = coincidencia.groups()
-    if len(primero) == 4:
-        anio, mes, dia = int(primero), int(segundo), int(tercero)
-    else:
-        dia, mes, anio = int(primero), int(segundo), int(tercero)
-        if len(tercero) == 2:
-            anio += 2000
-
-    try:
-        return date(anio, mes, dia).isoformat()
-    except ValueError:
-        return None
-
-
-__all__ = ["fecha", "formatear_numero", "numero"]
+__all__ = ["numero"]

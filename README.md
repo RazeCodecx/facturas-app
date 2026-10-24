@@ -21,7 +21,7 @@ FastAPI ──► 1. valida tipo, tamaño y que la imagen se abra
    │        3. preprocesa y lee con OCR
    │        4. extrae los valores pedidos
    ▼
-PostgreSQL ──► invoices, invoice_items, taxes, ocr_runs
+PostgreSQL ──► invoices, ocr_runs
    │
    ▼
 GET /api/v1/export/invoices.csv  ──►  Excel del contador
@@ -65,18 +65,18 @@ La app busca en el texto reconocido el **primer texto** de cada línea de
 - Si no hay ninguna, la columna queda vacía y se avisa (`no_match`).
 - **Nunca se inventa un valor ni se adivina entre varios.**
 
-El valor que sigue al primer texto se normaliza a un número o a una fecha ISO
-(`AAAA-MM-DD`).
+El valor que sigue al primer texto se normaliza a número. Si no hay ningún número,
+se guarda el primer texto leído tal cual; así funcionan las columnas de texto que
+el contador pidió explícitamente, como `RIF` o `Moneda`.
 
-También se extraen cuatro campos internos de control: RIF del proveedor, serie,
-número de factura y fecha de emisión. Con ellos se arma una clave única para no
-registrar dos veces la misma factura.
+La app **no busca RIF, fecha, serie ni número de factura por su cuenta**. Solo
+busca las columnas que estén en `plantilla.csv`. Las fechas no se convierten: si el
+contador pide una, se guarda el texto tal como se leyó.
 
-### 4. Deduplicación
+### 4. Sin deduplicación
 
-Si se manda la misma foto dos veces (el doble toque típico del Atajo), la segunda
-petición responde `409` con el `invoice_id` de la factura que ya existía. La
-carrera la resuelve el propio `INSERT` con `ON CONFLICT`, sin bloqueos.
+Cada foto crea una fila. Si la misma foto se envía dos veces, se registra dos
+veces.
 
 ### 5. Exportación
 
@@ -244,9 +244,8 @@ Total = Total a pagar
 
 El archivo se entrega **vacío**. Si está completamente vacío, la app le escribe
 una sola vez un mensaje con el formato que acepta; después nunca más lo toca. Si
-el contador no escribió ninguna línea, se usan internamente las 11 columnas por
-defecto (RIF, número, fecha, base, IVA, total, moneda, etc.), pero la app no se
-las muestra ni se las sugiere.
+no hay al menos una línea de columna, la app se detiene con un error: **no hay
+columnas por defecto**.
 
 ### Formato de números
 
@@ -264,10 +263,8 @@ cambia con líneas de configuración:
 | `acentos` | `1` ignora tildes, `0` no | `1` |
 
 Una línea de configuración mal escrita no es error: se usa el valor por defecto.
-
-> **Importante para Venezuela:** con el formato por defecto, `116,00` **no** se
-> interpreta como `116.00`. Para facturas venezolanas hay que poner
-> `#miles=. #decimal=,`. La app no adivina el separador.
+La app no adivina el separador: si las facturas usan coma decimal, hay que poner
+`#miles=. #decimal=,`.
 
 ---
 
@@ -298,35 +295,31 @@ Sin autenticación. Prefijo `/api/v1`.
 
 | Código | Cuándo |
 |---|---|
-| `409` | La factura ya estaba registrada (incluye `invoice_id`) |
 | `413` | El archivo supera el tamaño máximo |
 | `415` | El contenido no es una imagen aceptada |
 | `422` | La imagen está corrupta o no se puede abrir |
 | `503` | No hay ningún motor de OCR disponible |
 
-**Lista:** filtros `supplier_rif`, `issue_date`, `review_status`, `limit`,
-`offset`.
+**Lista:** filtros `review_status`, `limit` y `offset`.
 
-**Exportación:** filtros `review_status` e `issue_date`, aplicados en el `SELECT`.
-Las dos respuestas son `text/csv; charset=utf-8`.
+**Exportación:** filtro `review_status`, aplicado en el `SELECT`. Las dos
+respuestas son `text/csv; charset=utf-8`.
 
 ---
 
 ## Base de datos
 
-Cinco tablas (`app/db/migrations/001_inicial.sql`):
+Dos tablas (`app/db/migrations/001_inicial.sql`):
 
 | Tabla | Contenido |
 |---|---|
-| `fiscal_profiles` | Perfil fiscal por país (Venezuela por defecto) |
-| `invoices` | Cabecera, control, estado de revisión y valores del contador en `JSONB` |
-| `invoice_items` | Líneas de la factura (hoy la app no las parsea) |
-| `taxes` | Impuestos y retenciones |
+| `invoices` | Estado de revisión y valores del contador en `JSONB` |
 | `ocr_runs` | Imágenes y texto crudo, solo para depurar |
 
-Cada valor del `JSONB` guarda `frase`, `encabezado`, `value`, `confidence` y
-`engine`. El texto crudo del OCR **solo** se guarda si hubo `no_match`,
-`ambiguous` o `low_confidence`; si todo salió bien, queda en `NULL`.
+Cada valor del `JSONB` guarda `frase`, `encabezado`, `value` y `confidence`. El
+motor no se guarda dentro de `values`: `ocr_runs.engine_version` conserva el motor
+principal como dato interno. El texto crudo del OCR **solo** se guarda si hubo
+`no_match`, `ambiguous` o `low_confidence`; si todo salió bien, queda en `NULL`.
 
 ---
 
@@ -369,8 +362,7 @@ SCHEMAS.md             contratos de datos y de la API
 
 - **La app no cuadra totales** ni valida que la suma de las columnas cierre: con
   columnas arbitrarias no puede saber cuál es la base y cuál el IVA.
-- **`invoice_items` y `taxes` no se llenan** en el escaneo actual: la extracción
-  de líneas de la factura no está implementada.
+- **Sin deduplicación:** si la misma foto se envía dos veces, se registra dos veces.
 - **Fotos reales pendientes:** las specs 002, 003 y 004 todavía no se cierran
   porque faltan las pruebas con fotos reales, con el Atajo del iPhone y con el CSV
   abierto en Excel.
