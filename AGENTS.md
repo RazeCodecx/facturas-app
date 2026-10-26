@@ -1,7 +1,7 @@
 # App de Facturas
 
-App local que recibe fotos de facturas desde un iPhone, las procesa con Tesseract
-y EasyOCR, guarda los datos estructurados en PostgreSQL y exporta un CSV que el
+App local que recibe fotos de facturas desde un iPhone, las procesa con RapidOCR,
+guarda los datos estructurados en PostgreSQL y exporta un CSV que el
 contador abre y edita en Excel. Además, el valor extraído de la imagen se envía en
 tiempo real al Excel cuya ruta exacta se indica en `plantilla.csv`.
 
@@ -27,7 +27,7 @@ Wi-Fi puede exportar los datos fiscales. Que la red sea privada y con clave.
 
 - `app/` — código de la aplicación
 - `app/api/` — routers de FastAPI; un archivo por recurso
-- `app/ocr/` — preprocesado de imagen, Tesseract, EasyOCR, búsqueda de los primeros
+- `app/ocr/` — preprocesado de imagen, RapidOCR, búsqueda de los primeros
   textos del contador y parseo a campos
 - `app/db/` — conexión psycopg, pool, migraciones y queries
 - `app/export/` — lectura de `plantilla.csv`, emparejamiento por primer texto,
@@ -50,7 +50,7 @@ reglas, contratos y specs.
 
 - **Backend y SQL** (Agente 1) — endpoints, esquema, migraciones, exportación
   CSV. No toca OCR: consume el resultado del Agente 2.
-- **Visión y OCR** (Agente 2) — limpieza de imagen, Tesseract, parseo a objeto
+- **Visión y OCR** (Agente 2) — limpieza de imagen, RapidOCR, parseo a objeto
   estructurado. No escribe en PostgreSQL: entrega el objeto al Agente 1.
 - **QA** (Agente 3) — pytest, validación de contratos de API y del CSV. No
   implementa funcionalidad: si encuentra un defecto, lo reporta con la spec y

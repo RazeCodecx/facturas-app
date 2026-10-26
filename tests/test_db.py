@@ -105,7 +105,7 @@ class TestDetalle:
             original_path="imagenes/a.heic",
             converted_path="imagenes/a.png",
             raw_text="TEXTO SECRETO DEL OCR",
-            engine_version="tesseract-5.4.0",
+            engine_version="rapidocr-3.10.0",
             confidence=90.0,
         )
         factura = db.obtener_factura(invoice_id)
@@ -123,7 +123,7 @@ class TestOcrRuns:
             original_path="imagenes/a.heic",
             converted_path="imagenes/a.png",
             raw_text="texto reconocido",
-            engine_version="tesseract-5.4.0",
+            engine_version="rapidocr-3.10.0",
             confidence=41.0,
         )
         assert run_id > 0
@@ -141,7 +141,7 @@ class TestOcrRuns:
             original_path="imagenes/b.heic",
             converted_path="imagenes/b.png",
             raw_text=None,
-            engine_version="tesseract-5.4.0",
+            engine_version="rapidocr-3.10.0",
             confidence=97.0,
         )
 

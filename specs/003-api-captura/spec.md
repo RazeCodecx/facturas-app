@@ -40,8 +40,8 @@ Orquesta a la 002 y persiste con las queries de la 001.
   importes conservan su valor exacto.
 - **CA-21.** Dado el servidor arrancado en `0.0.0.0:8000`, cuando el iPhone manda
   una foto por Wi-Fi, entonces la petición llega.
-- **CA-22.** Dado el servidor sin los pesos de EasyOCR descargados, cuando
-  escaneo, entonces avisa y sigue con Tesseract solamente, sin caerse.
+- **CA-22.** Dado el servidor sin RapidOCR disponible, cuando escaneo, entonces
+  responde `503` con el mensaje de motor no disponible, sin caerse.
 - **CA-23.** Dado el servicio arrancado, cuando consulto `GET /health`, entonces
   responde el estado del servicio y el de la conexión a PostgreSQL.
 - **CA-43.** Dado un escaneo donde un primer texto no encontró nada, cuando leo la

@@ -15,18 +15,14 @@ imagen ya convertida
    │
    ├─▶ preprocess     app/ocr/preprocess.py   5 pasos, orden fijo
    │
-   ├─▶ tesseract      app/ocr/tesseract_engine.py   texto en orden de lectura
-   │      │                                        + confianza 0-100
-│      └─ primeros textos vacíos o bajo el umbral de .env
-    │             │
-    │             └─▶ easyocr  app/ocr/easyocr_engine.py   solo esos
-    │
-    ├─▶ extract        app/ocr/extract.py
-    │      • por cada columna del contador:
-    │          buscar SU PRIMER TEXTO, saltar coincidencias parciales,
-    │          tomar el valor que sigue, normalizar el número
-    │      • devolver el segundo texto intacto junto al valor
-   │      • los 4 campos de control, con sus alias internos fijos
+   ├─▶ rapidocr       app/ocr/rapidocr_engine.py   texto en orden de lectura
+   │                                               + confianza 0-100
+   │
+   ├─▶ extract        app/ocr/extract.py
+   │      • por cada columna del contador:
+   │          buscar SU PRIMER TEXTO, saltar coincidencias parciales,
+   │          tomar el valor que sigue, normalizar el número
+   │      • devolver el segundo texto intacto junto al valor
    │
    └─▶ ExtractionResult  (dataclass, va a la 003)
 ```
@@ -42,8 +38,7 @@ se sabe qué pasó.
 | Archivo | Responsabilidad |
 |---|---|
 | `app/ocr/preprocess.py` | Gris, ruido, inclinación, umbral, escalado |
-| `app/ocr/tesseract_engine.py` | Texto en orden de lectura y confianza. `--psm 6 --oem 3 -l eng+spa` |
-| `app/ocr/easyocr_engine.py` | Igual, arranque perezoso, `gpu=False`, `['es','en']` |
+| `app/ocr/rapidocr_engine.py` | Texto en orden de lectura y confianza. RapidOCR con ONNX Runtime, PP-OCRv6 y español |
 | `app/ocr/extract.py` | **Búsqueda del primer texto de cada columna, valores y avisos** |
 | `app/ocr/normalize.py` | Separadores de miles y decimal, fechas a ISO |
 | `app/models/invoice.py` | `Columna`, `ExtractionResult`, `ExtractedValue`, `ControlFields` |
@@ -165,26 +160,18 @@ factura igual.** La 002 no lanza ni descarta nada; solo avisa con
 ```python
 @dataclass
 class ExtractedValue:
-    encabezado: str       # segundo texto: el nombre de la columna, intacto
-    value: str | None     # None cuando no se encontró. Nunca inventado
-    confidence: float     # 0-100
-    engine: str           # "tesseract" | "easyocr"
-
-@dataclass
-class ControlFields:
-    supplier_rif: str | None
-    serie: str | None
-    numero: str | None
-    issue_date: str | None
+    encabezado: str             # segundo texto: el nombre de la columna, intacto
+    value: float | str | None   # None cuando no se encontró. Nunca inventado
+    confidence: float           # 0-100
 
 @dataclass
 class ExtractionResult:
     values: list[ExtractedValue]   # uno por columna, en el orden de la lista
-    control: ControlFields         # los 4, nunca exportados
-    items: list[InvoiceLine]
     raw_text: str                  # NUNCA sale por la API. Va a ocr_runs solo
                                    # si algún valor salió dudoso
-    engines_used: list[str]
+    engines_used: list[str]        # ["rapidocr"]
+    review_status: str
+    review_reason: str | None
 ```
 
 `ExtractedValue` **no lleva el primer texto**. La 004 ya tiene la lista de columnas y
@@ -221,28 +208,26 @@ qué: entre las columnas del contador puede no haber ninguna base ni ningún IVA
 
 ## Umbral de confianza
 
-Vive en `.env`, como `OCR_CONFIDENCE_THRESHOLD`. EasyOCR devuelve confianza en 0-1 y
-Tesseract en 0-100, así que hay que **normalizar a 0-100 antes de comparar**.
+Vive en `.env`, como `OCR_CONFIDENCE_THRESHOLD`. RapidOCR devuelve confianza en 0-1,
+así que hay que **normalizar a 0-100 antes de comparar**.
 
 Un valor por debajo del umbral marca `low_confidence`, **y es la razón por la que
 `raw_text` se guarda**: si algo salió dudoso, el texto reconocido es lo único que
 permite saber por qué.
 
-## EasyOCR
+## RapidOCR
 
-**Arranque perezoso.** Los modelos ocupan cientos de MB en memoria. Se cargan la
-primera vez que un primer texto lo necesita, y `EASYOCR_MODEL_DIR` dice dónde viven los
-pesos ya descargados.
+**Arranque perezoso.** Los modelos PP-OCRv6 se cargan la primera vez que se escanea
+una factura y se reutilizan en los escaneos siguientes. El motor usa ONNX Runtime y
+reconocimiento en español.
 
-**Si los pesos no están descargados, se avisa y se devuelve `None`.** La 003
-responde igual y el escaneo sigue con Tesseract solamente.
+**Si RapidOCR no está instalado o no puede cargar sus modelos**, la 003 responde
+`503` con el mensaje de motor no disponible.
 
 ## Configuración
 
 | Variable | Para qué | Estado |
 |---|---|---|
-| `TESSERACT_CMD` | Ruta del binario | Conocida |
-| `EASYOCR_MODEL_DIR` | Dónde viven los pesos descargados | Por defecto en la carpeta de la app |
 | `OCR_CONFIDENCE_THRESHOLD` | Umbral de `low_confidence` | En `.env`, por defecto `60` |
 
 El formato numérico y el manejo de tildes **no vienen de `.env`**: vienen de la

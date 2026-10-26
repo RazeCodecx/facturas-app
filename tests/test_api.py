@@ -8,7 +8,6 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any
 
-import pytesseract
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -85,7 +84,7 @@ def _resultado(motivo: str | None = None) -> ExtractionResult:
     return ExtractionResult(
         values=[valor],
         raw_text="TOTAL 116,00",
-        engines_used=["tesseract"],
+        engines_used=["rapidocr"],
         review_status="needs_review" if motivo else "ok",
         review_reason=motivo,
     )
@@ -218,8 +217,10 @@ def test_scan_rechaza_imagen_corrupta(cliente: TestClient, fake: FakeQueries) ->
 def test_scan_sin_motor_responde_503(
     cliente: TestClient, fake: FakeQueries, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from app.ocr.rapidocr_engine import RapidOCRNoDisponible
+
     def _sin_motor(*args):
-        raise pytesseract.TesseractNotFoundError()
+        raise RapidOCRNoDisponible()
 
     monkeypatch.setattr(api_scan, "leer_factura", _sin_motor)
 
@@ -255,31 +256,30 @@ def test_dos_peticiones_simultaneas_crean_dos_filas(
     assert len(fake.facturas) == 2
 
 
-def test_scan_sigue_sin_easyocr(
+def test_scan_usa_rapidocr(
     cliente: TestClient,
     fake: FakeQueries,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.ocr import easyocr_engine, preprocess, tesseract_engine
+    from app.ocr import rapidocr_engine
     from app.ocr.pipeline import leer_factura
-    from app.ocr.tesseract_engine import Lectura, Palabra
+    from app.ocr.rapidocr_engine import Lectura, Palabra
 
-    monkeypatch.setattr(preprocess, "preprocesar", lambda imagen: imagen)
     monkeypatch.setattr(
-        tesseract_engine,
+        rapidocr_engine,
         "leer",
         lambda imagen: Lectura(
             texto="Total 116.00",
             palabras=[Palabra("Total", 95.0, 0), Palabra("116.00", 95.0, 0)],
         ),
     )
-    monkeypatch.setattr(easyocr_engine, "leer", lambda imagen: None)
     monkeypatch.setattr(api_scan, "leer_factura", leer_factura)
 
     respuesta = _subir(cliente)
 
     assert respuesta.status_code == 201
     assert respuesta.json()["invoice_id"] == 1
+    assert fake.ocr_runs[0]["engine_version"] == "rapidocr"
 
 
 def test_scan_sincroniza_el_excel_de_salida(

@@ -6,17 +6,17 @@
 
 - Lenguaje: Python 3.12.10 estricto. Tests: pytest
 - Framework / runtime: FastAPI + uvicorn en `0.0.0.0:8000`
-- OCR: Tesseract nativo vía `pytesseract` y EasyOCR, idiomas `eng+spa`. **EasyOCR entra por primer texto**, solo donde Tesseract falló
+- OCR: RapidOCR con ONNX Runtime, modelos PP-OCRv6 y reconocimiento en español. Es el único motor
 - Base de datos: PostgreSQL local vía `psycopg` v3
 - Salida: CSV con la biblioteca estándar (UTF-8 con BOM, se abre en Excel)
 
-Dependencias autorizadas, y ninguna más: `fastapi`, `uvicorn`, `python-multipart`, `pydantic`, `pytesseract`, `easyocr`, `psycopg[binary]`, `Pillow`, `pillow-heif`, `opencv-python-headless`, `openpyxl`, y las transitivas que arrastren (EasyOCR exige PyTorch y numpy).
+Dependencias autorizadas, y ninguna más: `fastapi`, `uvicorn`, `python-multipart`, `pydantic`, `rapidocr`, `onnxruntime`, `numpy`, `psycopg[binary]`, `Pillow`, `pillow-heif`, `opencv-python-headless`, `openpyxl`, y las transitivas que arrastren.
 
 `openpyxl` está autorizada porque el contador indica en `plantilla.csv` la ruta exacta de un libro `.xlsx` y la app escribe ahí los valores extraídos en tiempo real, sin pasar por el CSV descargable.
 
 `pillow-heif` está autorizada porque el iPhone manda las fotos en HEIC y Pillow no lo abre sin ella (`SCHEMAS.md` §7).
 
-`opencv-python-headless` está autorizada porque el preprocesado necesita quitar ruido y enderezar la imagen. Es transitiva de EasyOCR, pero se declara explícita para que el preprocesado no dependa de que EasyOCR siga instalado.
+`opencv-python-headless` está autorizada porque el preprocesado y RapidOCR necesitan leer, limpiar y enderezar la imagen. Se declara explícita para no depender de que otra librería la arrastre.
 
 Para las pruebas se autoriza `httpx`, que es lo que exige el `TestClient` de FastAPI. **No la usa la app en producción.**
 
@@ -59,7 +59,7 @@ Al terminar, reporta lo que cambiaste y lo que quedó sin hacer, sin adornos.
 - **La app no cuadra totales.** No existe `unbalanced_total`: con columnas arbitrarias no puede saber cuál es la base y cuál el IVA (`SCHEMAS.md` §3.3).
 - **Preprocesado de imagen: el orden es fijo y no se negociable.** Gris → ruido → inclinación → umbral → escalado. **Umbralizar antes de quitar el ruido y de enderezar deja los bordes de las letras rotos**, y eso destruye justo el texto que el OCR necesita leer. Los pasos se agregan al lado, nunca en medio.
 - **Números:** `float` en Python y número dentro del `JSONB`, para que los importes enteros se conserven exactos. Redondeo a 2 decimales solo al exportar.
-- **Pruebas** en `tests/`, junto a lo que prueban, con `fixtures` de pytest, en entornos aislados: sin datos reales ni Tesseract real.
+- **Pruebas** en `tests/`, junto a lo que prueban, con `fixtures` de pytest, en entornos aislados: sin datos reales ni RapidOCR real.
 
 ## Checklist de calidad
 

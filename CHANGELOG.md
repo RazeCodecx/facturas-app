@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## Motor RapidOCR y retiro de EasyOCR (2026-10-26)
+
+### Hecho
+
+- `app/ocr/rapidocr_engine.py` reemplaza al motor anterior: RapidOCR con ONNX
+  Runtime, modelos PP-OCRv6 y reconocimiento en español.
+- Se eliminó `app/ocr/easyocr_engine.py` y la combinación de motores por primer
+  texto. RapidOCR es el único motor.
+- `app/config.py`, `.env` y `.env.example` ya no piden binario de Tesseract,
+  carpeta `tessdata` ni modelos de EasyOCR.
+- `pipeline.py`, `extract.py` y `api/scan.py` se adaptaron al motor único; el
+  `503` ahora depende de que RapidOCR no esté disponible.
+- Tests actualizados y nuevo `tests/test_rapidocr_engine.py`.
+- `CONSTITUTION.md`, `AGENTS.md`, `SCHEMAS.md`, `README.md` y las specs 001-003
+  actualizadas.
+- Validado con las 4 imágenes reales: `30100,00`, `29800,00`, `45260,00` y
+  `29690,00`; entre 5,4 s y 6,6 s por imagen.
+
 ## 006 — Sin columnas ni campos prefabricados (2026-10-21)
 
 ### Hecho

@@ -12,7 +12,6 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-import pytesseract
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -23,6 +22,7 @@ from app.export.plantilla import Plantilla, PlantillaError, leer_plantilla
 from app.models.api import ScanResponse
 from app.models.invoice import ExtractionResult
 from app.ocr.pipeline import leer_factura
+from app.ocr.rapidocr_engine import RapidOCRNoDisponible
 
 router = APIRouter(tags=["captura"])
 logger = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ async def escanear(file: UploadFile = File(...)) -> ScanResponse:
             plantilla.formato,
             config.ocr_confidence_threshold,
         )
-    except pytesseract.TesseractNotFoundError as exc:
+    except RapidOCRNoDisponible as exc:
         raise HTTPException(
             status_code=503,
             detail="No hay ningún motor de OCR disponible.",
@@ -142,7 +142,7 @@ async def escanear(file: UploadFile = File(...)) -> ScanResponse:
         original_path=str(original),
         converted_path=str(convertida),
         raw_text=resultado.raw_text if _necesita_texto_crudo(resultado.review_reason) else None,
-        engine_version=resultado.engines_used[0] if resultado.engines_used else "tesseract",
+        engine_version=resultado.engines_used[0] if resultado.engines_used else "rapidocr",
         confidence=_confianza(resultado),
     )
 

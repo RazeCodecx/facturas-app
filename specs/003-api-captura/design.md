@@ -39,7 +39,7 @@ queda en `200`: es un diagnóstico, no un fallo del servicio. → CA-23
 | `413` | Archivo mayor a 10 MB | `{ "detail": "El archivo supera los 10 MB." }` |
 | `415` | Content-type no es imagen | `{ "detail": "El archivo debe ser una imagen (JPEG, PNG o HEIC)." }` |
 | `422` | Imagen corrupta o ilegible | `{ "detail": "No se pudo leer la imagen." }` |
-| `503` | Sin EasyOCR y sin Tesseract | `{ "detail": "No hay ningún motor de OCR disponible." }` |
+| `503` | RapidOCR no disponible | `{ "detail": "No hay ningún motor de OCR disponible." }` |
 
 **El `409` lleva el `invoice_id` de la factura que ya existía.** No es solo un error:
 es la forma de que el contador vea que su doble toque no creó un segundo registro, y
@@ -91,8 +91,7 @@ lectura. → CA-70
 | Content-type no en la lista | `415` |
 | Archivo mayor a 10 MB | `413` |
 | Violación de `dedupe_key` | `409` con el `invoice_id` existente |
-| Tesseract no está instalado | `503` |
-| EasyOCR sin pesos | Aviso, se sigue con Tesseract |
+| RapidOCR no está instalado o no carga sus modelos | `503` |
 
 El mensaje va en español y **nunca** incluye ruta del sistema, SQL ni excepción
 cruda. → CA-04
@@ -125,9 +124,8 @@ else:
 Es la regla que hace que `raw_text` sea útil: si todo salió bien no sirve de nada y
 ocupa espacio, y si algo salió mal es lo único que explica por qué. → CA-58, CA-59
 
-El motor principal de la foto va en `engine_version`; **el detalle por valor** va
-dentro de cada objeto del `JSONB` de `invoices`, porque EasyOCR entra por primer texto y una
-foto puede tener valores de los dos motores (D-01 de la 001).
+El motor que leyó la foto va en `engine_version`. RapidOCR es el único motor, así
+que los valores del `JSONB` de `invoices` no guardan `engine` (D-01 de la 001).
 
 ## Configuración
 
@@ -135,8 +133,6 @@ foto puede tener valores de los dos motores (D-01 de la 001).
 |---|---|---|
 | `MAX_UPLOAD_MB` | Límite de tamaño | `10` |
 | `OCR_CONFIDENCE_THRESHOLD` | Umbral de confianza de la 002 | `60` |
-| `TESSERACT_CMD` | Ruta del binario de Tesseract | Si falta, `pytesseract` lo busca en el `PATH` y falla con un error poco descriptivo |
-| `EASYOCR_MODEL_DIR` | Dónde viven los pesos ya descargados | Por defecto en la carpeta de la app |
 | `IMAGE_DIR` | Carpeta de imágenes originales y convertidas | `imagenes/` |
 
 **No hay `API_TOKEN`.** No hay autenticación (A-02).

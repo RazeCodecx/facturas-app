@@ -119,7 +119,7 @@ Ninguna. Las cinco quedaron resueltas:
 | # | Decisión |
 |---|---|
 | **O-01** | **Eliminado.** La app no cuadra totales. Con columnas arbitrarias no puede saber cuál es la base y cuál el IVA. No existe `unbalanced_total` |
-| **O-02** | **EasyOCR entra por primer texto**, solo donde Tesseract devolvió vacío o confianza bajo el umbral |
+| **O-02** | **RapidOCR es el único motor.** No hay segundo motor ni reintento por primer texto |
 | **O-03** | El umbral vive en `.env`, como `OCR_CONFIDENCE_THRESHOLD` |
 | **O-04** | Alias internos fijos: `RIF`, `N° factura`/`Nº factura`/`No. factura`/`Factura N°`, `Fecha`. Ver la tabla de arriba |
 | **O-05** | Se ignoran mayúsculas siempre. Las tildes se ignoran por defecto y se apagan con `#acentos=0`. Los espacios interiores no se colapsan y la puntuación no se quita |

@@ -66,9 +66,8 @@ cuenta.
 El motor de OCR es un dato interno de la corrida, no un dato del contador. Por eso
 `invoices.values` **no lleva `engine`**.
 
-`ocr_runs.engine_version` guarda el motor principal de la foto, para saber con qué
-se procesó. Si EasyOCR intervino en alguna columna, la corrida ya quedó registrada
-en `ocr_runs`; el detalle por valor no se guarda.
+`ocr_runs.engine_version` guarda el motor que procesó la foto, para saber con qué
+se leyó. RapidOCR es el único motor; el detalle por valor no se guarda.
 
 ### D-02 — La imagen en disco
 

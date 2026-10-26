@@ -1,7 +1,7 @@
 """Búsqueda del primer texto de cada columna, valores y avisos.
 
 Es el corazón de la 002. Recibe texto ya reconocido, no imágenes: por eso se
-prueba sin Tesseract ni EasyOCR reales (`specs/002-ocr-factura/tasks.md` T4.1).
+prueba sin RapidOCR real (`specs/002-ocr-factura/tasks.md` T4.1).
 
 Reglas (`SCHEMAS.md` §5): coincidencia completa, sin distinguir mayúsculas, sin
 distinguir tildes salvo `#acentos=0`, sin coincidencias parciales, y **nunca se
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from app.models.invoice import (
@@ -22,11 +22,12 @@ from app.models.invoice import (
     Formato,
 )
 from app.ocr.normalize import numero
-from app.ocr.tesseract_engine import Lectura
+from app.ocr.rapidocr_engine import Lectura
 
 _ESTADO_OK = "ok"
 _ESTADO_SIN_COINCIDENCIA = "no_match"
 _ESTADO_AMBIGUO = "ambiguous"
+_PATRON_SOLO_NUMERO = re.compile(r"^[+\-−–]?\d[\d.,]*%?$")
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class _Hallazgo:
     estado: str
     valor: float | str | None = None
     linea: int | None = None
+    misma_linea: bool = False
 
 
 def _sin_tildes(texto: str) -> str:
@@ -82,18 +84,57 @@ def _coincidencias(texto: str, frase: str) -> list[tuple[int, int]]:
     return [(coincidencia.start(), coincidencia.end()) for coincidencia in patron.finditer(texto)]
 
 
+def _parece_numero(token: str) -> bool:
+    return bool(_PATRON_SOLO_NUMERO.match(token.strip(".,;:()[]")))
+
+
+def _linea_de_valor(segmento: str) -> bool:
+    """Acepta una línea siguiente solo si parece contener el valor y nada más."""
+    tokens = [token for token in re.split(r"\s+", segmento) if token]
+    if not tokens or len(tokens) > 2:
+        return False
+
+    numeros = sum(_parece_numero(token) for token in tokens)
+    letras = [
+        token
+        for token in tokens
+        if not _parece_numero(token) and any(caracter.isalpha() for caracter in token)
+    ]
+    return numeros == 1 and all(
+        sum(caracter.isalpha() for caracter in token) <= 3 for token in letras
+    )
+
+
 def _primer_valor(segmento: str, formato: Formato) -> float | str | None:
     """Devuelve el primer número del segmento; si no hay, el primer texto.
 
     El número se normaliza con el formato del contador. El texto se conserva tal
     cual, para las columnas que el contador pidió explícitamente y que no son
-    numéricas (por ejemplo, un RIF o una moneda).
+    numéricas (por ejemplo, un RIF o una moneda). Los tokens puramente
+    numéricos tienen prioridad para que un `Bs` leído como `8s` no se guarde
+    como el número 8.
     """
     tokens = [token for token in re.split(r"\s+", segmento) if token]
+
     for token in tokens:
+        if _parece_numero(token):
+            valor = numero(token, formato)
+            if valor is not None:
+                return valor
+
+    for token in tokens:
+        if _parece_numero(token):
+            continue
+        if sum(caracter.isalpha() for caracter in token) < 2:
+            continue
         valor = numero(token, formato)
         if valor is not None:
             return valor
+
+    for token in tokens:
+        if _parece_numero(token):
+            return token.strip(".,;:()[]")
+
     for token in tokens:
         limpio = token.strip(".,;:()[]")
         if any(caracter.isalnum() for caracter in limpio):
@@ -103,14 +144,19 @@ def _primer_valor(segmento: str, formato: Formato) -> float | str | None:
 
 def _valor_despues(
     texto: str, fin: int, formato: Formato
-) -> tuple[float | str, int] | None:
+) -> tuple[float | str, int, bool] | None:
     """Busca el valor en la misma línea de la coincidencia y, si no hay, en la siguiente."""
     linea = texto.count("\n", 0, fin)
     segmentos = texto[fin:].split("\n")
-    for desplazamiento, segmento in enumerate(segmentos[:2]):
-        valor = _primer_valor(segmento, formato)
+
+    valor = _primer_valor(segmentos[0], formato)
+    if valor is not None:
+        return valor, linea, True
+
+    if len(segmentos) > 1 and _linea_de_valor(segmentos[1]):
+        valor = _primer_valor(segmentos[1], formato)
         if valor is not None:
-            return valor, linea + desplazamiento
+            return valor, linea + 1, False
     return None
 
 
@@ -134,8 +180,8 @@ def _resolver(lectura: Lectura, columna: Columna, formato: Formato) -> _Hallazgo
     if encontrado is None:
         return _Hallazgo(_ESTADO_SIN_COINCIDENCIA)
 
-    valor, linea = encontrado
-    return _Hallazgo(_ESTADO_OK, valor, linea)
+    valor, linea, misma_linea = encontrado
+    return _Hallazgo(_ESTADO_OK, valor, linea, misma_linea)
 
 
 def _unir_motivos(motivos: Sequence[str]) -> str | None:
@@ -158,43 +204,14 @@ def extraer(
     columnas: Sequence[Columna],
     formato: Formato,
     umbral: float,
-    obtener_easyocr: Callable[[], Lectura | None] | None = None,
 ) -> ExtractionResult:
-    """Extrae un valor por columna, en el orden recibido, y arma los avisos.
-
-    `obtener_easyocr` se llama como máximo una vez y solo si alguna columna salió
-    vacía o con confianza bajo el umbral (`SCHEMAS.md` §5.5).
-    """
+    """Extrae un valor por columna, en el orden recibido, y arma los avisos."""
     valores: list[ExtractedValue] = []
     motivos: list[str] = []
-    motores: list[str] = [lectura.motor]
-    cache_alternativa: list[Lectura | None] = []
-
-    def alternativa() -> Lectura | None:
-        if not cache_alternativa:
-            cache_alternativa.append(obtener_easyocr() if obtener_easyocr is not None else None)
-        return cache_alternativa[0]
 
     for columna in columnas:
         hallazgo = _resolver(lectura, columna, formato)
         confianza = lectura.confianza_linea(hallazgo.linea) if hallazgo.linea is not None else 0.0
-
-        necesita_ayuda = hallazgo.estado == _ESTADO_SIN_COINCIDENCIA or (
-            hallazgo.estado == _ESTADO_OK and confianza < umbral
-        )
-        if necesita_ayuda:
-            otra_lectura = alternativa()
-            if otra_lectura is not None:
-                if otra_lectura.motor not in motores:
-                    motores.append(otra_lectura.motor)
-                otro = _resolver(otra_lectura, columna, formato)
-                if otro.estado == _ESTADO_OK:
-                    otra_confianza = (
-                        otra_lectura.confianza_linea(otro.linea) if otro.linea is not None else 0.0
-                    )
-                    if hallazgo.estado != _ESTADO_OK or otra_confianza > confianza:
-                        hallazgo = otro
-                        confianza = otra_confianza
 
         if hallazgo.estado == _ESTADO_AMBIGUO:
             motivos.append(_aviso(_ESTADO_AMBIGUO, columna))
@@ -214,7 +231,7 @@ def extraer(
     return ExtractionResult(
         values=valores,
         raw_text=lectura.texto,
-        engines_used=motores,
+        engines_used=[lectura.motor],
         review_status="needs_review" if motivo is not None else "ok",
         review_reason=motivo,
     )

@@ -13,6 +13,8 @@ from PIL import Image
 
 LADO_MINIMO = 1800
 INCLINACION_MAXIMA = 15.0
+MARGEN_LATERAL = 0.22
+MARGEN_AMPLIO = 0.15
 
 
 def _a_gris(imagen: Image.Image) -> np.ndarray:
@@ -101,4 +103,45 @@ def preprocesar(imagen: Image.Image) -> Image.Image:
     return Image.fromarray(escalada)
 
 
-__all__ = ["preprocesar"]
+def recortar_documento(imagen: Image.Image, margen: float = MARGEN_LATERAL) -> Image.Image:
+    """Quita las franjas laterales de fondo y deja el papel centrado."""
+    ancho, alto = imagen.size
+    recorte = int(round(ancho * margen))
+    return imagen.crop((recorte, 0, ancho - recorte, alto))
+
+
+def _realzar(imagen: Image.Image) -> Image.Image:
+    """Sube el contraste local del papel sin convertirlo en blanco y negro."""
+    gris = np.array(imagen.convert("L"))
+    return Image.fromarray(
+        cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gris)
+    )
+
+
+def _escalar_color(imagen: Image.Image, factor: int) -> Image.Image:
+    return imagen.resize(
+        (imagen.width * factor, imagen.height * factor),
+        Image.LANCZOS,
+    )
+
+
+def variantes(imagen: Image.Image) -> list[tuple[str, Image.Image]]:
+    """Entrega lecturas alternativas del mismo papel para que el pipeline elija.
+
+    La foto completa incluye mucho fondo; el recorte central y las escalas con
+    contraste local recuperan los recibos torcidos o arrugados que el
+    preprocesado binario fijo degrada.
+    """
+    documento = recortar_documento(imagen)
+    documento_amplio = recortar_documento(imagen, MARGEN_AMPLIO)
+    documento_realzado = _realzar(documento)
+    documento_amplio_realzado = _realzar(documento_amplio)
+    return [
+        ("original", imagen),
+        ("documento_2x", _escalar_color(documento, 2)),
+        ("documento_2x_clahe", _escalar_color(documento_realzado, 2)),
+        ("documento_amplio_3x_clahe", _escalar_color(documento_amplio_realzado, 3)),
+    ]
+
+
+__all__ = ["preprocesar", "recortar_documento", "variantes"]

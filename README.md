@@ -45,13 +45,14 @@ letras, así que el orden no se cambia.
 
 Después:
 
-1. **Tesseract** lee la imagen (`--psm 6`, idiomas `eng+spa`).
-2. Si alguna columna no aparece o su confianza es baja, entra **EasyOCR** una sola
-   vez sobre la misma imagen, como respaldo.
-3. Si EasyOCR no está instalado o no tiene los pesos, la app avisa en el log y
-   sigue solo con Tesseract. No se cae.
+1. **RapidOCR** lee la imagen con sus modelos PP-OCRv6 locales en español.
+2. La app prueba varias variantes de la misma foto y se queda con la lectura que
+   encuentra más valores, en la línea correcta y con mayor confianza.
+3. Si RapidOCR no está instalado o no puede cargar sus modelos, el escaneo
+   responde `503`.
 
-EasyOCR **no se descarga solo**: los pesos deben estar en `EASYOCR_MODEL_DIR`.
+RapidOCR y sus modelos vienen incluidos en el paquete: no hay que instalar un OCR
+nativo ni descargar pesos por separado.
 
 ### 3. Extracción
 
@@ -113,7 +114,6 @@ invoice_id,frase,columna,motivo
 
 - Windows con Python **3.12**.
 - PostgreSQL local (en esta máquina, puerto **5433**).
-- Tesseract OCR instalado, con los datos de idioma `eng` y `spa`.
 - PC e iPhone en la misma red Wi-Fi privada.
 
 ---
@@ -124,7 +124,7 @@ invoice_id,frase,columna,motivo
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install fastapi uvicorn python-multipart pydantic pytesseract easyocr "psycopg[binary]" Pillow pillow-heif opencv-python-headless
+.\.venv\Scripts\python.exe -m pip install fastapi uvicorn python-multipart pydantic rapidocr onnxruntime numpy "psycopg[binary]" Pillow pillow-heif opencv-python-headless
 ```
 
 Para los tests hace falta además `httpx` (no lo usa la app en producción):
@@ -133,8 +133,8 @@ Para los tests hace falta además `httpx` (no lo usa la app en producción):
 .\.venv\Scripts\python.exe -m pip install httpx
 ```
 
-La lista de dependencias autorizadas está en `CONSTITUTION.md`. EasyOCR arrastra
-PyTorch y es la instalación más pesada.
+La lista de dependencias autorizadas está en `CONSTITUTION.md`. RapidOCR y ONNX
+Runtime son las dependencias nuevas del motor OCR.
 
 ### 2. Base de datos
 
@@ -157,9 +157,6 @@ Completar `.env` con los valores reales. Las variables principales:
 |---|---|
 | `DATABASE_URL` | Conexión de la app a PostgreSQL |
 | `DB_POOL_SIZE` | Conexiones del pool (por defecto 5) |
-| `TESSERACT_CMD` | Ruta de `tesseract.exe` |
-| `TESSDATA_PREFIX` | Carpeta con los modelos de idioma |
-| `EASYOCR_MODEL_DIR` | Carpeta de pesos de EasyOCR |
 | `OCR_CONFIDENCE_THRESHOLD` | Confianza mínima (0-100); por debajo, queda en revisión |
 | `MAX_UPLOAD_MB` | Tamaño máximo de la foto |
 | `IMAGE_DIR` | Carpeta de imágenes originales y convertidas |
@@ -334,7 +331,7 @@ Los tests de base de datos crean y destruyen una base `facturas_test_<hex>`; no
 tocan la base real. Para eso necesitan `TEST_ADMIN_DATABASE_URL` en `.env` con un
 usuario que tenga `CREATE DATABASE`.
 
-Los tests de OCR no usan Tesseract ni EasyOCR reales: trabajan con texto simulado.
+Los tests de OCR no usan RapidOCR real: trabajan con texto simulado.
 
 ---
 
@@ -346,7 +343,7 @@ app/
   config.py            lectura de .env
   api/                 endpoints (scan, invoices, export)
   models/              dataclasses de extracción y modelos de la API
-  ocr/                 preprocesado, Tesseract, EasyOCR, extracción, pipeline
+  ocr/                 preprocesado, RapidOCR, extracción, pipeline
   db/                  pool, queries y migraciones
   export/              plantilla.csv, CSV de facturas y avisos.csv
 specs/                 spec, design y tasks de cada feature

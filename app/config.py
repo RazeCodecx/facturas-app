@@ -43,9 +43,6 @@ class Config:
 
     database_url: str
     db_pool_size: int
-    tesseract_cmd: str
-    tessdata_prefix: str
-    easyocr_model_dir: str
     ocr_confidence_threshold: float
     max_upload_mb: int
     image_dir: Path
@@ -56,9 +53,6 @@ class Config:
         return cls(
             database_url=_texto("DATABASE_URL"),
             db_pool_size=_entero("DB_POOL_SIZE", 5),
-            tesseract_cmd=_texto("TESSERACT_CMD"),
-            tessdata_prefix=_texto("TESSDATA_PREFIX"),
-            easyocr_model_dir=_texto("EASYOCR_MODEL_DIR"),
             ocr_confidence_threshold=float(_entero("OCR_CONFIDENCE_THRESHOLD", 60)),
             max_upload_mb=_entero("MAX_UPLOAD_MB", 10),
             image_dir=RAIZ / _texto("IMAGE_DIR", "imagenes"),

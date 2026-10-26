@@ -55,8 +55,8 @@ antes, es andamiaje.
       *Verificable:* mandar la misma foto dos veces **nunca** deja dos filas en
       `invoices`, y la segunda responde `409` con el `invoice_id` de la primera.
       → CA-68
-- [X] **T2.6** Sin EasyOCR disponible, avisa y sigue con Tesseract.
-      *Verificable:* con los pesos ausentes responde `201`, no `500`. → CA-22
+- [X] **T2.6** Sin RapidOCR disponible, responde `503` con un mensaje claro.
+      *Verificable:* si el motor no carga, no responde `500`. → CA-22
 - [X] **T2.7** `raw_text` **solo si hizo falta**: si hay `no_match`, `ambiguous` o
       `low_confidence`, se guarda; si no, queda en `NULL`.
       *Verificable:* con todo en verde, `ocr_runs.raw_text` es `NULL`. Con una
@@ -79,7 +79,7 @@ antes, es andamiaje.
 
 - [X] **T4.1** `tests/test_api.py` con `TestClient`, motor y base mockeados: las
       cuatro rutas y los seis códigos de error.
-      *Verificable:* pasa **sin base real ni Tesseract real**. → CA-01, CA-02,
+      *Verificable:* pasa **sin base real ni RapidOCR real**. → CA-01, CA-02,
       CA-03, CA-04, CA-23
 - [X] **T4.2** Test con una **foto en HEIC**.
       *Verificable:* responde `201`, y quedan las dos rutas en `ocr_runs`.

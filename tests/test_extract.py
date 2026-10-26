@@ -1,6 +1,6 @@
 """Tests de la extracción. Ver `specs/002-ocr-factura/tasks.md` Fase 4.
 
-Todo corre con texto simulado: sin Tesseract real y sin EasyOCR.
+Todo corre con texto simulado: sin RapidOCR real.
 """
 
 from __future__ import annotations
@@ -12,13 +12,13 @@ import pytest
 from app.models.invoice import Columna, Formato
 from app.ocr.extract import extraer
 from app.ocr.normalize import numero
-from app.ocr.tesseract_engine import Lectura, Palabra
+from app.ocr.rapidocr_engine import Lectura, Palabra
 
 VENEZOLANO = Formato(miles=".", decimal=",")
 UMBRAL = 60.0
 
 
-def _lectura(texto: str, confianza: float = 95.0, motor: str = "tesseract") -> Lectura:
+def _lectura(texto: str, confianza: float = 95.0, motor: str = "rapidocr") -> Lectura:
     """Arma una lectura simulada a partir de un texto, una línea por renglón."""
     palabras = [
         Palabra(texto=palabra, confianza=confianza, linea=linea)
@@ -132,6 +132,19 @@ class TestBusqueda:
 
         assert resultado.values[0].value == 116.0
 
+    def test_no_confunde_la_moneda_mal_leida_con_el_numero(self):
+        lectura = _lectura("TOTAL VENTAS 8s 30100,00")
+        resultado = extraer(lectura, [_columna("TOTAL VENTAS")], VENEZOLANO, UMBRAL)
+
+        assert resultado.values[0].value == 30100.0
+
+    def test_no_toma_la_linea_siguiente_si_es_otra_etiqueta(self):
+        lectura = _lectura("TOTAL VENTAS\n81 IGTF\nNOTAS DE DEBITO")
+        resultado = extraer(lectura, [_columna("TOTAL VENTAS", "Base")], VENEZOLANO, UMBRAL)
+
+        assert resultado.values[0].value is None
+        assert "no_match:TOTAL VENTAS" in resultado.review_reason
+
     def test_primer_texto_mal_escrito_avisa(self):
         lectura = _lectura("TOTAL 116,00")
         resultado = extraer(lectura, [_columna("Ttal", "Base imponible")], VENEZOLANO, UMBRAL)
@@ -220,61 +233,8 @@ class TestColumnasDeTexto:
         assert resultado.review_reason is None
 
 
-class TestCombinacionDeMotores:
-    """T1.4: EasyOCR entra solo donde Tesseract falló o quedó bajo el umbral."""
-
-    def test_no_se_llama_si_tesseract_leyo_bien(self):
-        llamadas = []
-
-        def easyocr() -> Lectura:
-            llamadas.append(1)
-            return _lectura("TOTAL 116,00", motor="easyocr")
-
-        lectura = _lectura("TOTAL 116,00")
-        extraer(lectura, [_columna("Total")], VENEZOLANO, UMBRAL, easyocr)
-
-        assert llamadas == []
-
-    def test_entra_si_tesseract_no_encontro(self):
-        lectura = _lectura("texto ilegible")
-        resultado = extraer(
-            lectura,
-            [_columna("Total", "Base imponible")],
-            VENEZOLANO,
-            UMBRAL,
-            lambda: _lectura("TOTAL 116,00", motor="easyocr"),
-        )
-
-        assert resultado.values[0].value == 116.0
-        assert "easyocr" in resultado.engines_used
-
-    def test_entra_una_sola_vez_para_varias_columnas(self):
-        llamadas = []
-
-        def easyocr() -> Lectura:
-            llamadas.append(1)
-            return _lectura("", motor="easyocr")
-
-        lectura = _lectura("texto ilegible")
-        columnas = [_columna("Total"), _columna("IVA")]
-        extraer(lectura, columnas, VENEZOLANO, UMBRAL, easyocr)
-
-        assert len(llamadas) == 1
-
-    def test_dos_columnas_pueden_usar_motores_distintos(self):
-        lectura = _lectura("IVA 16,00")
-        columnas = [_columna("IVA", "Monto del IVA"), _columna("Total", "Base imponible")]
-        resultado = extraer(
-            lectura,
-            columnas,
-            VENEZOLANO,
-            UMBRAL,
-            lambda: _lectura("TOTAL 116,00", motor="easyocr"),
-        )
-
-        assert resultado.values[0].value == 16.0
-        assert resultado.values[1].value == 116.0
-        assert resultado.engines_used == ["tesseract", "easyocr"]
+class TestMotorUnico:
+    """RapidOCR es el único motor; la confianza baja se conserva como aviso."""
 
     def test_confianza_baja_se_marca(self):
         lectura = _lectura("TOTAL 116,00", confianza=40.0)

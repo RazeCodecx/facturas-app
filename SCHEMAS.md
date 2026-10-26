@@ -290,14 +290,15 @@ El contador puede cambiarlo con `#miles=. #decimal=,` para leer `1.234,56` como
 Las fechas **no se convierten**. Si el contador pide una fecha, se guarda el texto
 tal como se leyó.
 
-### 5.5 EasyOCR
+### 5.5 RapidOCR
 
-Tesseract siempre primero. **EasyOCR entra solo por primer texto**, para los que
-salieron vacíos o con confianza bajo el umbral. Es mucho más lento en CPU.
+RapidOCR es el único motor de OCR. Usa modelos PP-OCRv6 locales sobre ONNX Runtime,
+en español, y devuelve la confianza de cada detección en 0-1; la app la normaliza a
+0-100 antes de compararla con el umbral.
 
-**Arranque perezoso**: los modelos se cargan la primera vez que un primer texto lo
-necesita. Si los pesos no están descargados, se avisa y el escaneo sigue solo con
-Tesseract.
+**Arranque perezoso**: los modelos se cargan la primera vez que se escanea una
+factura. Si RapidOCR no está instalado o no puede cargar sus modelos, el escaneo
+responde `503`.
 
 ---
 

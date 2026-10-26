@@ -22,18 +22,14 @@ el formato numérico y si se ignoran tildes.
       `CONSTITUTION.md` § Convenciones**: gris, ruido, inclinación, umbral,
       escalado.
       *Verificable:* recibe una imagen de prueba y devuelve una umbralizada.
-- [x] **T1.2** `app/ocr/tesseract_engine.py`: texto **en orden de lectura**,
-      izquierda a derecha y arriba abajo, más la confianza de cada palabra con
-      `image_to_data`. `--psm 6 --oem 3 -l eng+spa`.
+- [x] **T1.2** `app/ocr/rapidocr_engine.py`: arranque **perezoso**, modelos
+      PP-OCRv6 en español sobre ONNX Runtime, texto **en orden de lectura** y
+      confianza normalizada de 0-1 a **0-100**.
       *Verificable:* el texto sale en el mismo orden en que se lee la factura.
-- [x] **T1.3** `app/ocr/easyocr_engine.py`: arranque **perezoso**, `gpu=False`,
-      `['es','en']`, confianza normalizada de 0-1 a **0-100**.
-      *Verificable:* con los pesos ausentes devuelve `None` y un aviso, sin tumbar
-      la app. El servidor no carga los modelos al arrancar.
-- [x] **T1.4** Combinación **por primer texto**: EasyOCR entra solo donde Tesseract devolvió
-      vacío o confianza bajo `OCR_CONFIDENCE_THRESHOLD`.
-      *Verificable:* un primer texto que Tesseract leyó bien no se vuelve a procesar, y
-      dos primeros textos distintos de la misma foto pueden tener motores distintos.
+      El servidor no carga los modelos al arrancar.
+- [x] **T1.3** `app/ocr/pipeline.py` prueba varias variantes de la misma imagen y
+      elige la lectura con más valores, en la línea correcta y con mayor confianza.
+      *Verificable:* una foto difícil no depende de una sola lectura.
 
 ---
 
@@ -112,8 +108,8 @@ Es el corazón de la feature.
 - [x] **T4.1** `tests/test_extract.py` con `mocks` de texto: primer texto que coincide,
       que no coincide, que coincide dentro de `SUBTOTAL`, que tiene varias
       coincidencias, dos primeros textos distintos sobre el mismo valor, número con
-      los dos formatos numéricos, número con signo, fecha, y los 4 campos de control.
-      *Verificable:* pasa **sin Tesseract real y sin EasyOCR**.
+      los dos formatos numéricos, número con signo y valores de texto.
+      *Verificable:* pasa **sin RapidOCR real**.
       → CA-05 a CA-09, CA-33 a CA-34, CA-54, CA-55
 - [x] **T4.2** Test de que el resultado **nunca** lleva un valor inventado: sin
       coincidencia es `None`, no `""`, ni `0`, ni el valor de otra columna.
@@ -133,9 +129,9 @@ Es el corazón de la feature.
       sobre el total, y recibo térmico desvanecido.
       *Verificable:* cada caso o extrae bien o deja la columna vacía y avisa.
 - [x] **T4.8** `ruff check .` sin hallazgos y `pytest` en verde.
-- [ ] **T4.9** Medir con fotos reales si EasyOCR mejora el resultado.
-      *Verificable:* comparado contra la factura original. **Si no mejora, decirlo
-      y replantear la decisión antes de seguir.**
+- [x] **T4.9** Medir RapidOCR con fotos reales de factura.
+      *Verificable:* cada valor esperado coincide y el tiempo por imagen es
+      aceptable para un lote.
 - [x] **T4.10** Probar primeros textos mal escritos a propósito, con tildes cambiadas
       y en minúsculas.
       *Verificable:* el contador ve la columna vacía y el aviso, no un valor

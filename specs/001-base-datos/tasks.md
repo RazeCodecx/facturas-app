@@ -16,15 +16,16 @@ Ninguna tarea de esta fase bloquea a ninguna.
 
 - [X] **T1.1** Crear el `.venv` con Python 3.12.10.
       *Verificable:* `.\.venv\Scripts\python.exe --version` dice 3.12.10.
-- [X] **T1.2** `requirements.txt` con `fastapi`, `uvicorn`, `python-multipart`,
-      `pydantic`, `pytesseract`, `easyocr`, `psycopg[binary]`, `Pillow`,
-      `pillow-heif`, y `pytest` y `ruff` como desarrollo.
-      *Verificable:* `pip install -r requirements.txt` sin errores. Si pide algo
+- [X] **T1.2** Dependencias instaladas en `.venv`: `fastapi`, `uvicorn`,
+      `python-multipart`, `pydantic`, `rapidocr`, `onnxruntime`, `numpy`,
+      `psycopg[binary]`, `Pillow`, `pillow-heif`, y `pytest` y `ruff` como
+      desarrollo.
+      *Verificable:* el entorno importa cada dependencia sin errores. Si pide algo
       fuera de esta lista, **parar y preguntar**.
 - [X] **T1.3** `.gitignore` con `.venv/`, `__pycache__/`, `.env`, `imagenes/`.
 - [X] **T1.4** `.env.example` con `DATABASE_URL`, `DB_POOL_SIZE`,
-      `TESSERACT_CMD`, `EASYOCR_MODEL_DIR`, `OCR_CONFIDENCE_THRESHOLD`,
-      `MAX_UPLOAD_MB`, `EXPORT_DIR`. `.env` real con la cadena de conexión.
+      `OCR_CONFIDENCE_THRESHOLD`, `MAX_UPLOAD_MB`, `IMAGE_DIR`. `.env` real con
+      la cadena de conexión.
       *Verificable:* `.env` nunca se versiona.
 - [X] **T1.5** Estructura de paquetes: `app/`, `app/api/`, `app/ocr/`,
       `app/db/`, `app/db/migrations/`, `app/export/`, `app/models/`, `tests/`.

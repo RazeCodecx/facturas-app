@@ -1,12 +1,11 @@
-"""Tests del preprocesado y del arranque perezoso de EasyOCR."""
+"""Tests del preprocesado de imagen."""
 
 from __future__ import annotations
 
 import numpy as np
 from PIL import Image, ImageDraw
 
-from app.ocr import easyocr_engine
-from app.ocr.preprocess import LADO_MINIMO, preprocesar
+from app.ocr.preprocess import LADO_MINIMO, preprocesar, variantes
 
 
 def _imagen() -> Image.Image:
@@ -35,8 +34,12 @@ def test_no_falla_con_imagen_uniforme():
     assert salida.mode == "L"
 
 
-def test_easyocr_sin_lector_devuelve_none(monkeypatch):
-    monkeypatch.setattr(easyocr_engine, "_resuelto", True)
-    monkeypatch.setattr(easyocr_engine, "_lector", None)
+def test_variantes_recortan_y_escalan_el_documento():
+    nombres = [nombre for nombre, _ in variantes(_imagen())]
 
-    assert easyocr_engine.leer(_imagen()) is None
+    assert nombres == [
+        "original",
+        "documento_2x",
+        "documento_2x_clahe",
+        "documento_amplio_3x_clahe",
+    ]
